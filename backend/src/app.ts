@@ -30,13 +30,16 @@ export function createApp(pool: Pool, ingestor: Ingestor) {
   });
 
   app.use(healthRouter(pool, ingestor));
+  // Sim/fault-injection is global admin control, not user-scoped data — it
+  // must NOT sit behind requireUserId, or the demo's "flip outage live"
+  // moment needs a fake identity header for no reason.
+  app.use(simRouter(ingestor.provider));
   app.use("/api", requireUserId);
   app.use(symbolsRouter(pool));
   app.use(quotesRouter(pool));
   app.use(watchlistsRouter(pool));
   app.use(changesRouter(pool, ingestor));
   app.use(checkpointRouter(pool));
-  app.use(simRouter(ingestor.provider));
 
   app.use((_req, res) => res.status(404).json({ error: "Not found", code: "NOT_FOUND" }));
   app.use(errorHandler);
