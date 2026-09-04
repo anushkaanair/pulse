@@ -15,12 +15,24 @@ const STEP_ROT = 13;
 // the stage's own overflow:hidden). Below the breakpoint the card shrinks
 // to fit and the anchor recentres to 50%.
 const NARROW_BREAKPOINT = 560;
+// Compact by default (roughly half the old footprint — it was taking up
+// too much vertical space at rest) and grows to the old full size only
+// when the front card is actually clicked open. Two complete dimension
+// sets rather than one CSS-scaled box, so the stage height genuinely
+// shrinks at rest instead of just visually shrinking inside a fixed box.
 function layoutFor(containerWidth: number) {
-  if (containerWidth > 0 && containerWidth < NARROW_BREAKPOINT) {
-    const cardW = Math.max(200, Math.min(280, containerWidth - 48));
-    return { cardW, stepX: cardW * 0.34, stepZ: 70, anchor: "50%", stageH: 400, cardTop: -150 };
+  const narrow = containerWidth > 0 && containerWidth < NARROW_BREAKPOINT;
+  if (narrow) {
+    const cardWExp = Math.max(200, Math.min(280, containerWidth - 48));
+    return {
+      compact: { cardW: cardWExp * 0.56, stepX: cardWExp * 0.2, stepZ: 40, anchor: "50%", stageH: 210, cardTop: -84 },
+      expanded: { cardW: cardWExp, stepX: cardWExp * 0.34, stepZ: 70, anchor: "50%", stageH: 400, cardTop: -150 },
+    };
   }
-  return { cardW: 300, stepX: 132, stepZ: 108, anchor: "42%", stageH: 372, cardTop: -140 };
+  return {
+    compact: { cardW: 168, stepX: 74, stepZ: 60, anchor: "42%", stageH: 190, cardTop: -78 },
+    expanded: { cardW: 300, stepX: 132, stepZ: 108, anchor: "42%", stageH: 372, cardTop: -140 },
+  };
 }
 
 // The ranked "what deserves your attention" list, rendered as glass panes
@@ -95,6 +107,8 @@ export function AttentionDeck({
 
   if (items.length === 0) return null;
 
+  const dims = expanded ? layout.expanded : layout.compact;
+
   const onMove = (event: React.MouseEvent) => {
     if (flat) return;
     const r = stage.current?.getBoundingClientRect();
@@ -114,10 +128,11 @@ export function AttentionDeck({
       onMouseMove={onMove}
       onMouseLeave={() => setParallax({ x: 0, y: 0 })}
       onKeyDown={onKey}
-      className="relative select-none overflow-hidden rounded-2xl border border-[var(--line)] outline-none transition-[height] duration-500"
+      className="relative select-none overflow-hidden rounded-2xl border border-[var(--line)] outline-none"
       style={{
-        height: expanded ? layout.stageH + 186 : layout.stageH, perspective: 1500, perspectiveOrigin: "50% 42%",
+        height: expanded ? dims.stageH + 186 : dims.stageH, perspective: 1500, perspectiveOrigin: "50% 42%",
         background: "radial-gradient(120% 90% at 22% 0%, rgba(0,190,140,.09), transparent 58%), linear-gradient(175deg, var(--surface-2), var(--ground-2))",
+        transition: "height .5s cubic-bezier(.22,1.4,.36,1)",
       }}
     >
       <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-28" style={{ background: "linear-gradient(to top, color-mix(in srgb, var(--surface-2) 94%, transparent), transparent)" }} />
@@ -129,7 +144,7 @@ export function AttentionDeck({
       <div
         className="absolute top-1/2"
         style={{
-          left: layout.anchor,
+          left: dims.anchor,
           transformStyle: "preserve-3d",
           transform: flat ? "translate(-50%,-50%)" : `translate(-50%,-46%) rotateX(${6 + parallax.x}deg) rotateY(${-9 + parallax.y * 0.35}deg)`,
           transition: "transform .42s cubic-bezier(.2,.8,.2,1)",
@@ -150,8 +165,8 @@ export function AttentionDeck({
             : expanded
               ? (isFront
                 ? "translate3d(0px,-62px,40px) rotateY(0deg) scale(1)"
-                : `translate3d(${depth * (layout.stepX + 26)}px, ${behind * 9}px, ${-behind * layout.stepZ - 90}px) rotateY(${depth * -STEP_ROT}deg) scale(${0.92 - behind * 0.03})`)
-              : `translate3d(${depth * layout.stepX}px, ${behind * 9}px, ${-behind * layout.stepZ}px) rotateY(${depth * -STEP_ROT}deg) scale(${1 - behind * 0.03})`;
+                : `translate3d(${depth * (dims.stepX + 26)}px, ${behind * 9}px, ${-behind * dims.stepZ - 90}px) rotateY(${depth * -STEP_ROT}deg) scale(${0.92 - behind * 0.03})`)
+              : `translate3d(${depth * dims.stepX}px, ${behind * 9}px, ${-behind * dims.stepZ}px) rotateY(${depth * -STEP_ROT}deg) scale(${1 - behind * 0.03})`;
 
           return (
             <article
@@ -165,12 +180,12 @@ export function AttentionDeck({
               onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); isFront ? setExpanded((o) => !o) : setActive(index); } }}
               className="absolute left-0 top-0 block cursor-pointer rounded-2xl p-px text-left"
               style={{
-                width: layout.cardW, marginLeft: -layout.cardW / 2, marginTop: layout.cardTop,
+                width: dims.cardW, marginLeft: -dims.cardW / 2, marginTop: dims.cardTop,
                 zIndex: 100 - behind,
                 opacity: behind > 3 ? 0 : expanded && !isFront ? dim * 0.35 : dim,
                 pointerEvents: behind > 3 ? "none" : "auto",
                 transformStyle: "preserve-3d", transform,
-                transition: "transform .56s cubic-bezier(.2,.8,.2,1), opacity .42s ease",
+                transition: "transform .5s cubic-bezier(.22,1.4,.36,1), opacity .35s ease",
                 background: `linear-gradient(150deg, rgba(0,190,140,${rim}), var(--line-2) 45%, var(--line) 100%)`,
                 boxShadow: isFront
                   ? `0 42px 70px -28px var(--shadow-deck), 0 0 60px -18px rgba(0,190,140,${rim * 0.85})`
@@ -178,10 +193,32 @@ export function AttentionDeck({
                 filter: isFront ? "none" : `saturate(${1 - behind * 0.18}) blur(${behind * 0.6}px)`,
               }}
             >
-              <div className="relative overflow-hidden rounded-[15px] p-5" style={{ minHeight: 244, background: "linear-gradient(168deg, var(--surface-2), var(--surface))" }}>
+              <div className="relative overflow-hidden rounded-[15px]" style={{ padding: expanded ? 20 : 12, minHeight: expanded ? 244 : dims.stageH - 20, background: "linear-gradient(168deg, var(--surface-2), var(--surface))", transition: "padding .3s ease" }}>
                 <span aria-hidden="true" className="pointer-events-none absolute inset-0" style={{ background: "linear-gradient(135deg, rgba(255,255,255,.055), transparent 42%)" }} />
                 <span aria-hidden="true" className="pointer-events-none absolute -right-10 -top-12 h-32 w-32 rounded-full" style={{ filter: "blur(28px)", background: `rgba(0,190,140,${(16 + magnitude * 32) / 100})` }} />
 
+                {!expanded ? (
+                  // Compact rest state: identity + price + σ only. The full
+                  // reasoning, chips, and sparkline are the reward for
+                  // clicking the front card open — not shown at rest, which
+                  // is what actually lets the card be small at rest.
+                  <div className="relative flex h-full flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center justify-center w-7 h-7 rounded-lg text-[11px] font-semibold" style={{ background: "linear-gradient(145deg, var(--surface-3), var(--surface))", border: "1px solid var(--line-2)" }}>{item.symbol[0]}</span>
+                      <span className="rounded-full bg-[var(--amber)]/15 px-1.5 py-0.5 text-[8.5px] font-bold uppercase text-[var(--amber)]">{isTop ? "#1" : `#${index + 1}`}</span>
+                    </div>
+                    <h3 className="m-0 mt-1.5 truncate text-[13px] font-semibold tracking-tight">{item.symbol}</h3>
+                    <div className="mt-1.5 flex items-end justify-between gap-1.5">
+                      <span className="numbers text-[13px] font-semibold">₹{Number(item.quote.price).toFixed(0)}</span>
+                      <span
+                        className="numbers rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold"
+                        style={zScore === null ? { color: "var(--muted)", background: "var(--surface-3)" } : { color: positive ? "var(--green)" : "var(--red)", background: positive ? "rgba(46,204,143,.13)" : "rgba(255,107,91,.13)" }}
+                      >
+                        {zScore === null ? "New" : `${positive ? "▲" : "▼"} ${Math.abs(zScore) > 9 ? ">9" : Math.abs(zScore).toFixed(1)}σ`}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
                 <div className="relative">
                   <div className="flex items-start justify-between mb-3.5">
                     <span className="flex items-center justify-center w-10 h-10 rounded-xl text-[15px] font-semibold" style={{ background: "linear-gradient(145deg, var(--surface-3), var(--surface))", border: "1px solid var(--line-2)", boxShadow: "inset 0 1px 0 rgba(255,255,255,.07)" }}>
@@ -204,9 +241,6 @@ export function AttentionDeck({
                   <h3 className="m-0 text-[17px] font-semibold tracking-tight">{item.symbol}</h3>
                   <p className="mt-0.5 mb-0 truncate text-[11.5px] text-[var(--muted)]">{item.name}</p>
 
-                  {/* Only the front card shows the full reasoning; receding
-                      cards show a clean one-liner so their text can't bleed
-                      into each other's space (looked chaotic before). */}
                   {isFront ? (
                     <p className="mt-3 mb-0 line-clamp-4 text-[13px] leading-relaxed text-[var(--ink-2)]" style={{ minHeight: "3.5em" }} title={item.change.why}>{item.change.why}</p>
                   ) : (
@@ -233,12 +267,9 @@ export function AttentionDeck({
                     </span>
                   </div>
 
-                  {isFront ? (
-                    expanded
-                      ? <ExpandedDetail item={item} points={sparklines[item.symbol]} />
-                      : <p className="mt-3 mb-0 flex gap-1 text-[10.5px] text-[var(--muted)]">+ Click for detail</p>
-                  ) : null}
+                  {isFront ? <ExpandedDetail item={item} points={sparklines[item.symbol]} /> : null}
                 </div>
+                )}
               </div>
             </article>
           );

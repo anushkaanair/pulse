@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 // 940e43f: the conflict modal's "Keep mine" used to retry with the stale
 // pre-conflict version, so it 409'd forever and could never actually win.
 test("a genuine version conflict shows the modal, and 'Keep mine' now actually succeeds", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByRole("link", { name: /Market watch/ }).click();
 
   await page.getByRole("button", { name: "Bulk edit symbols" }).click();

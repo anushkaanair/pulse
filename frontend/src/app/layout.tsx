@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { Header } from "@/components/Header";
+import { HeaderGate } from "@/components/HeaderGate";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Market Watchlist",
-  description: "Meaningful market changes since you last looked.",
+  title: "Pulse",
+  description: "Market on your fingertips.",
 };
 
 // Applied before first paint, deliberately as a blocking inline script:
@@ -19,7 +19,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en" suppressHydrationWarning>
       <head><script dangerouslySetInnerHTML={{ __html: NO_FLASH }} /></head>
       <body>
-        <Header />
+        <HeaderGate />
         {children}
       </body>
     </html>

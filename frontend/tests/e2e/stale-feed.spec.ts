@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 // /api/_sim/faults shape the real backend uses) proves FeedStatusBar
 // responds to a degraded feed honestly, never hiding it.
 test("a stale symbol shows its badge without a feed-wide outage", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByRole("link", { name: /Market watch/ }).click();
 
   const ideaRow = page.locator("li", { hasText: "IDEA" });

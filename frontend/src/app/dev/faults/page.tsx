@@ -12,7 +12,7 @@ export default function FaultsPage() {
   const update = async (config: FaultConfig) => setActive((await api.setFaults(config)).active);
   return (
     <main className="mx-auto min-h-screen max-w-[880px] px-4 py-12">
-      <Link href="/" className="text-sm underline underline-offset-4 hover:text-[var(--ink)]">Back to watchlists</Link>
+      <Link href="/app" className="text-sm underline underline-offset-4 hover:text-[var(--ink)]">Back to watchlists</Link>
       <p className="mt-8 text-xs tracking-[0.16em] uppercase" style={{ color: "var(--amber)" }}>Demo controls</p>
       <h1 className="mt-2 text-[28px] font-semibold">Market feed faults</h1>
       <p className="mt-2 max-w-lg text-sm text-[var(--muted)]">Use these controls to demonstrate that delayed data stays visible and is never presented as fresh.</p>

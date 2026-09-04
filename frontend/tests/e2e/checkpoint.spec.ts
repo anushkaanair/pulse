@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 // is nothing. This is the mock-mode equivalent of the backend's own
 // checkpoint-exactness torture-test assertion.
 test("marking as seen clears the meaningful changes on the next load", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByRole("link", { name: /Market watch/ }).click();
 
   await expect(page.getByText(/things worth a look/)).toBeVisible();
@@ -18,7 +18,7 @@ test("marking as seen clears the meaningful changes on the next load", async ({ 
 });
 
 test("first visit shows the baseline message, not a fabricated change", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByPlaceholder("e.g. Long term").fill("Fresh List");
   await page.getByRole("button", { name: "Create watchlist" }).click();
 

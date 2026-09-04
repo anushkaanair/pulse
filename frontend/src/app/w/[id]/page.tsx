@@ -68,7 +68,7 @@ export default function WatchlistPage() {
   const requestedSymbols = () => [...new Set(symbolsText.split(",").map((symbol) => symbol.trim().toUpperCase()).filter(Boolean))];
   const saveBulk = async (symbols = requestedSymbols(), version = watchlist!.version) => { try { setWatchlist(await api.replaceItems(id, symbols, version)); setEditing(false); setConflict(undefined); } catch (cause) { const current = cause instanceof ApiRequestError ? (cause.response as unknown as Partial<ConflictResponse>).current : undefined; if (current) setConflict({ theirs: current.items, mine: symbols, version: current.version }); else setError(cause); } };
 
-  if (error) { const message = error instanceof ApiRequestError ? `${error.response.error} (${error.response.code})` : "Could not load this watchlist."; return <main className="mx-auto max-w-[880px] px-4 py-12"><Link href="/" className="text-sm underline underline-offset-4 hover:text-[var(--ink)]">Back to watchlists</Link><p className="mt-8 text-sm text-[var(--red)]">{message}</p></main>; }
+  if (error) { const message = error instanceof ApiRequestError ? `${error.response.error} (${error.response.code})` : "Could not load this watchlist."; return <main className="mx-auto max-w-[880px] px-4 py-12"><Link href="/app" className="text-sm underline underline-offset-4 hover:text-[var(--ink)]">Back to watchlists</Link><p className="mt-8 text-sm text-[var(--red)]">{message}</p></main>; }
   if (!watchlist || !changes) return <main className="mx-auto max-w-[880px] px-4 py-12 text-sm text-[var(--muted)]">Loading your catch-up…</main>;
 
   // Ranked, not thresholded: `changes.items` already arrives sorted by the
@@ -100,17 +100,17 @@ export default function WatchlistPage() {
   return (
     <main className="min-h-screen">
       <FeedStatusBar status={changes.feed.status} lagSeconds={changes.feed.lagSeconds} />
-      <div className="mx-auto max-w-7xl px-4 pt-6">
-        <Link href="/" className="text-sm text-[var(--muted)] hover:text-[var(--ink)] underline-offset-4 hover:underline">← Back to watchlists</Link>
-        <div className="mt-1 flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">{watchlist.name}</h1>
+      <div className="mx-auto max-w-7xl px-4 pt-3">
+        <Link href="/app" className="text-sm text-[var(--muted)] hover:text-[var(--ink)] underline-offset-4 hover:underline">← Back to watchlists</Link>
+        <div className="mt-0.5 flex flex-wrap items-center gap-3">
+          <h1 className="text-xl font-semibold tracking-tight">{watchlist.name}</h1>
           {changes.summary.meaningful > 0
             ? <span className="rounded-full bg-[var(--amber)]/15 px-2.5 py-0.5 text-[11px] font-medium text-[var(--amber)]">{changes.summary.meaningful} worth a look</span>
             : <span className="rounded-full bg-[var(--green)]/15 px-2.5 py-0.5 text-[11px] font-medium text-[var(--green)]">Caught up</span>}
         </div>
-        <p className="text-sm text-[var(--muted)] mt-1">{watchlist.items.length} {watchlist.items.length === 1 ? "symbol" : "symbols"}</p>
+        <p className="text-xs text-[var(--muted)] mt-0.5">{watchlist.items.length} {watchlist.items.length === 1 ? "symbol" : "symbols"}</p>
       </div>
-      <div className="mx-auto max-w-7xl px-4 py-8 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8">
+      <div className="mx-auto max-w-7xl px-4 pt-4 pb-8 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8">
 
         {/* Left Column - Main Content */}
         <div className="min-w-0">
@@ -129,9 +129,9 @@ export default function WatchlistPage() {
           ) : null}
 
           {/* Since You Last Looked */}
-          <section className="mb-6">
-            <h2 className="text-xl font-medium mb-1 tracking-tight">Most meaningful changes</h2>
-            <p className="text-sm text-[var(--muted)] mb-6">{changes.digest}</p>
+          <section className="mb-4">
+            <h2 className="text-lg font-medium mb-1 tracking-tight">Most meaningful changes</h2>
+            <p className="text-sm text-[var(--muted)] mb-3">{changes.digest}</p>
             {changes.summary.meaningful === 0 ? (
                <p className="text-sm text-[var(--muted)] bg-[var(--surface)] p-6 rounded-2xl border border-[var(--line)]">Nothing meaningful changed since {changes.baseline.takenAt ? new Date(changes.baseline.takenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "your last visit"}.</p>
             ) : (
