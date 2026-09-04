@@ -2,14 +2,13 @@ import { expect, test } from "@playwright/test";
 
 // Runs against the mock data layer (see playwright.config.ts) — the mock
 // seeds one existing watchlist ("Market watch") with 6 symbols, 3 of them
-// meaningful, so the happy path is reachable with zero setup.
+// meaningful, so the happy path is reachable with zero setup. /app itself
+// is just a redirector now (auto-lands on the first/only watchlist), so a
+// visit lands directly on the watchlist detail page.
 test("open a watchlist and see the ranked meaningful changes", async ({ page }) => {
   await page.addInitScript(() => sessionStorage.setItem("pulse-entered", "1"));
   await page.goto("/app");
-  await expect(page.getByRole("heading", { name: "What deserves attention" })).toBeVisible();
-
-  await page.getByRole("link", { name: /Market watch/ }).click();
-  await expect(page.getByRole("heading", { name: "Market watch" })).toBeVisible();
+  await expect(page.getByText("Market watch").first()).toBeVisible();
 
   // The digest line — the loudest text on the page per DESIGN_SYSTEM.md.
   await expect(page.getByText(/things worth a look/)).toBeVisible();

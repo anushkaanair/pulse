@@ -46,9 +46,25 @@ const INSERT_HISTORY = `
   ON CONFLICT (symbol, as_of) DO NOTHING
 `;
 
+// Delete in bounded batches rather than one statement: a single unbounded
+// DELETE over a large backlog holds a long transaction and bloats WAL for
+// what is meant to be invisible housekeeping. ctid is the cheapest possible
+// row address for the second pass.
+const PRUNE_HISTORY = `
+  DELETE FROM quote_history
+   WHERE ctid IN (
+     SELECT ctid FROM quote_history
+      WHERE as_of < now() - ($1 || ' days')::interval
+      LIMIT $2
+   )
+`;
+const PRUNE_BATCH = 10_000;
+const PRUNE_MAX_BATCHES = 20; // ≤200k rows per run; the rest waits for the next tick
+
 export class Ingestor {
   readonly stats: IngestStats = { received: 0, applied: 0, ignored: 0, historyInserted: 0, errors: 0 };
   private refreshTimer: NodeJS.Timeout | null = null;
+  private pruneTimer: NodeJS.Timeout | null = null;
   private inflight = new Set<Promise<void>>();
 
   constructor(
@@ -61,6 +77,10 @@ export class Ingestor {
   async start() {
     await this.refreshSymbols();
     this.refreshTimer = setInterval(() => void this.refreshSymbols(), config.symbolRefreshMs);
+    if (config.historyRetentionDays > 0) {
+      this.pruneTimer = setInterval(() => void this.pruneHistory(), config.historyPruneMs);
+      this.pruneTimer.unref?.(); // housekeeping must never hold the process open
+    }
     this.provider.start();
     logger.info({ provider: this.provider.name }, "ingestor started");
   }
@@ -68,7 +88,31 @@ export class Ingestor {
   async stop() {
     this.provider.stop();
     if (this.refreshTimer) clearInterval(this.refreshTimer);
+    if (this.pruneTimer) clearInterval(this.pruneTimer);
     await Promise.allSettled([...this.inflight]);
+  }
+
+  /**
+   * Drop history older than the retention window. Best-effort and
+   * self-limiting: a failure here is logged and retried on the next tick,
+   * never allowed to disturb ingestion, and each run is capped so a large
+   * backlog is worked off gradually instead of in one long transaction.
+   */
+  async pruneHistory(): Promise<number> {
+    if (config.historyRetentionDays <= 0) return 0;
+    let deleted = 0;
+    try {
+      for (let i = 0; i < PRUNE_MAX_BATCHES; i++) {
+        const res = await this.pool.query(PRUNE_HISTORY, [config.historyRetentionDays, PRUNE_BATCH]);
+        deleted += res.rowCount ?? 0;
+        if ((res.rowCount ?? 0) < PRUNE_BATCH) break;
+      }
+      if (deleted > 0) logger.info({ deleted, retentionDays: config.historyRetentionDays }, "pruned quote_history");
+    } catch (err) {
+      this.stats.errors++;
+      logger.warn({ err }, "history prune failed; will retry");
+    }
+    return deleted;
   }
 
   /** Union of all watched symbols. Symbols nobody watches aren't polled. */

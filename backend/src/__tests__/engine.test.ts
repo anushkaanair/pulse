@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import { buildDigest, computeChanges, DEFAULT_MULTIPLIER, type EngineConfig, type EngineItem, type SnapshotPayload } from "../changes/engine.js";
 import type { SymbolStats } from "../changes/stats.js";
 
+const ONE_SESSION_MS = 6.25 * 3_600_000; // production default
 const cfg: EngineConfig = {
   tickMs: 1000, zThreshold: 2, historyWindow: 50, absThresholdPct: 1.5,
   volumeSpikeMultiple: 2, gapPct: 2, sensitivityMultiplier: DEFAULT_MULTIPLIER,
+  maxHorizonMs: ONE_SESSION_MS,
 };
 
 // Defaults deliberately can't trigger DAY_HIGH/LOW_BREACHED or VOLUME_SPIKE
@@ -50,6 +52,48 @@ describe("computeChanges", () => {
     expect(soon.change.kind).toBe("move");
     expect(later.change.kind).toBe("none");
     expect(Math.abs(soon.change.zScore!)).toBeGreaterThan(Math.abs(later.change.zScore!));
+  });
+
+  // The horizon cap (see changeFor()'s comment). σ is fit on 50 ticks;
+  // extrapolating it across days by √n produced a bar no real move could
+  // clear, so a genuinely large move after a long absence was reported as
+  // "nothing meaningful changed" — the catch-up screen telling you less the
+  // longer you were away.
+  describe("away-horizon cap", () => {
+    // ~2%/day daily vol expressed per tick, the same realistic scale the
+    // digest tests use.
+    const REALISTIC = 0.00013;
+
+    it("an 8% move over a long weekend is meaningful — uncapped √n scaling buried it", () => {
+      const snap = { TCS: seen(100) };
+      const st = stats("TCS", REALISTIC);
+      const [r] = computeChanges(snap, 3 * 86_400_000, [item("TCS", 108)], st, cfg);
+      expect(r.change.kind).toBe("move");
+    });
+
+    it("the bar still grows with absence up to the cap", () => {
+      const snap = { TCS: seen(100) };
+      const st = stats("TCS", REALISTIC);
+      const oneMin = computeChanges(snap, 60_000, [item("TCS", 108)], st, cfg)[0];
+      const oneHour = computeChanges(snap, 3_600_000, [item("TCS", 108)], st, cfg)[0];
+      expect(Math.abs(oneMin.change.zScore!)).toBeGreaterThan(Math.abs(oneHour.change.zScore!));
+    });
+
+    it("past the cap the bar stops growing: 3 days and 3 weeks score identically", () => {
+      const snap = { TCS: seen(100) };
+      const st = stats("TCS", REALISTIC);
+      const days = computeChanges(snap, 3 * 86_400_000, [item("TCS", 108)], st, cfg)[0];
+      const weeks = computeChanges(snap, 21 * 86_400_000, [item("TCS", 108)], st, cfg)[0];
+      expect(days.change.zScore).toBe(weeks.change.zScore);
+    });
+
+    it("a raised cap restores the stricter long-absence bar, so this stays a tunable product call", () => {
+      const snap = { TCS: seen(100) };
+      const st = stats("TCS", REALISTIC);
+      const strict = { ...cfg, maxHorizonMs: 30 * 86_400_000 };
+      const [r] = computeChanges(snap, 3 * 86_400_000, [item("TCS", 108)], st, strict);
+      expect(r.change.kind).toBe("none");
+    });
   });
 
   it("same % move is noise for a volatile stock and news for a calm one", () => {

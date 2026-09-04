@@ -89,6 +89,7 @@ export function changesRouter(pool: Pool, ingestor: Ingestor) {
         volumeSpikeMultiple: config.volumeSpikeMultiple,
         gapPct: config.gapPct,
         sensitivityMultiplier: DEFAULT_MULTIPLIER,
+        maxHorizonMs: config.maxHorizonMs,
       }, indexReturn);
 
       const quoteBySymbol = new Map(items.rows.filter((i) => i.as_of).map((i) => [i.symbol, formatQuote(i, now)]));
@@ -98,7 +99,10 @@ export function changesRouter(pool: Pool, ingestor: Ingestor) {
       // tick that triggered its last event was later corrected below
       // threshold, that's surfaced as a visible retraction, never a silent
       // erase. See changes/significance.ts and DECISIONS.md.
-      const { quietForMs, retractions } = await applySignificanceClock(pool, results, quoteBySymbol, now);
+      const { quietForMs, retractions } = await applySignificanceClock(
+        pool, results, quoteBySymbol, now,
+        baseline ? new Date(baseline.taken_at) : null,
+      );
 
       // Watchlist-relative ranking, not just magnitude: `results` is already
       // sorted by the engine's own attention score, so results[0] (if it's
@@ -122,13 +126,26 @@ export function changesRouter(pool: Pool, ingestor: Ingestor) {
           volume: Number(row.volume), dayHigh: row.day_high, dayLow: row.day_low,
         };
       }
-      const snapshotId = await mintSnapshot(pool, req.userId, req.params.id, payload, currentTop, currentIndexPrice);
-
       const asOfMax = items.rows.reduce<Date | null>((m, i) => (i.as_of && (!m || i.as_of > m) ? new Date(i.as_of) : m), null);
       const baselineKind = baseline ? "checkpoint" : "first-visit";
 
-      const etag = `"${snapshotId}:${asOfMax?.toISOString() ?? "none"}"`;
-      if (req.header("if-none-match") === etag) return res.status(304).end();
+      // Resolve the snapshot id read-only FIRST. When nothing has changed
+      // the id is reused anyway, so the ETag is knowable without writing —
+      // and a conditional request whose whole purpose is "tell me if there's
+      // nothing new" should not perform an INSERT and a retention DELETE
+      // before answering "nothing new". Only mint (write) once we know the
+      // client actually needs a body.
+      const reusableId = await reusableSnapshotId(pool, req.userId, req.params.id, payload);
+      const etagFor = (id: string) => `"${id}:${asOfMax?.toISOString() ?? "none"}"`;
+      if (reusableId && req.header("if-none-match") === etagFor(reusableId)) {
+        // A 304 still carries its validator: caches that refresh freshness
+        // from the response rely on it being present, not just on the 200.
+        res.setHeader("ETag", etagFor(reusableId));
+        return res.status(304).end();
+      }
+
+      const snapshotId = reusableId ?? await mintSnapshot(pool, req.userId, req.params.id, payload, currentTop, currentIndexPrice);
+      const etag = etagFor(snapshotId);
 
       const summary = {
         meaningful: results.filter((x) => x.change.kind === "move" || x.change.kind === "event").length,
@@ -167,23 +184,33 @@ export function changesRouter(pool: Pool, ingestor: Ingestor) {
   return r;
 }
 
+// Read-only half of the mint: the id this response WOULD use if nothing has
+// changed since the last snapshot, or null if a new one must be written.
+// Split out so a conditional request can be answered without writing.
+//
+// Scaling fix: dedupe on a 40-byte hash, not a full 18KB jsonb equality
+// scan. Under concurrent polling most requests in the same tick window
+// see an identical latest snapshot and skip the write entirely — the
+// 500-symbol/50-user write storm that scale-check.ts found collapses to
+// one write per actual data change instead of one per request.
+async function reusableSnapshotId(
+  pool: Pool, userId: string, watchlistId: string, payload: SnapshotPayload,
+): Promise<string | null> {
+  const hash = payloadHash(payload);
+  const latest = await pool.query<{ id: string; payload_hash: string | null }>(
+    `SELECT id, payload_hash FROM snapshots
+      WHERE user_id = $1 AND watchlist_id = $2 ORDER BY taken_at DESC LIMIT 1`,
+    [userId, watchlistId],
+  );
+  return latest.rows[0]?.payload_hash === hash ? latest.rows[0].id : null;
+}
+
 async function mintSnapshot(
   pool: Pool, userId: string, watchlistId: string, payload: SnapshotPayload,
   topSymbol: string | null, indexPrice: number | null,
 ): Promise<string> {
   const json = JSON.stringify(payload);
   const hash = createHash("sha1").update(json).digest("hex");
-  // Scaling fix: dedupe on a 40-byte hash, not a full 18KB jsonb equality
-  // scan. Under concurrent polling most requests in the same tick window
-  // see an identical latest snapshot and skip the write entirely — the
-  // 500-symbol/50-user write storm that scale-check.ts found collapses to
-  // one write per actual data change instead of one per request.
-  const latest = await pool.query<{ id: string; payload_hash: string | null }>(
-    `SELECT id, payload_hash FROM snapshots
-      WHERE user_id = $1 AND watchlist_id = $2 ORDER BY taken_at DESC LIMIT 1`,
-    [userId, watchlistId],
-  );
-  if (latest.rows[0]?.payload_hash === hash) return latest.rows[0].id;
   const ins = await pool.query<{ id: string }>(
     "INSERT INTO snapshots (user_id, watchlist_id, payload, payload_hash, top_symbol, index_price) VALUES ($1, $2, $3::jsonb, $4, $5, $6) RETURNING id",
     [userId, watchlistId, json, hash, topSymbol, indexPrice],
@@ -212,11 +239,20 @@ interface Retraction { symbol: string; name: string; previousZ: number | null }
 // prior state for every symbol in this response, decide per symbol, batch-
 // write the results. One extra query plus at most one write per symbol
 // that actually changed state this poll — most polls touch zero rows here.
+//
+// Deciding is global; REPORTING is per-user. The decision latch
+// (`symbol_significance`) can only fire once per real-world event, so if the
+// response were built from the decision alone, only whichever user happened
+// to poll first would ever see a retraction or a "quiet for N" annotation —
+// everyone else would watch the card silently disappear. So each decision is
+// also appended to `symbol_significance_events`, and what this user sees is
+// projected from that log against THEIR checkpoint (`sinceTakenAt`).
 async function applySignificanceClock(
   pool: Pool,
   results: EngineResult[],
   quoteBySymbol: Map<string, Quote>,
   now: Date,
+  sinceTakenAt: Date | null,
 ): Promise<{ quietForMs: Map<string, number | null>; retractions: Retraction[] }> {
   const quietForMs = new Map<string, number | null>();
   const retractions: Retraction[] = [];
@@ -246,7 +282,6 @@ async function applySignificanceClock(
       now,
     );
     if (decision.action === "new-event") {
-      quietForMs.set(result.symbol, decision.quietForMs);
       writes.push(pool.query(
         `INSERT INTO symbol_significance (symbol, last_event_at, last_event_as_of, last_event_z, retracted_at)
          VALUES ($1, $2, $3, $4, NULL)
@@ -255,12 +290,53 @@ async function applySignificanceClock(
            last_event_z = EXCLUDED.last_event_z, retracted_at = NULL`,
         [result.symbol, now, new Date(quote.asOf), result.change.zScore],
       ));
+      writes.push(pool.query(
+        `INSERT INTO symbol_significance_events (symbol, event_as_of, event_at, z, quiet_for_ms)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (symbol, event_as_of) DO NOTHING`,
+        [result.symbol, new Date(quote.asOf), now, result.change.zScore, decision.quietForMs],
+      ));
     } else if (decision.action === "retract") {
-      retractions.push({ symbol: result.symbol, name: result.name, previousZ: decision.previousZ });
       writes.push(pool.query("UPDATE symbol_significance SET retracted_at = $2 WHERE symbol = $1", [result.symbol, now]));
+      writes.push(pool.query(
+        `UPDATE symbol_significance_events SET retracted_at = $3
+          WHERE symbol = $1 AND event_as_of = $2 AND retracted_at IS NULL`,
+        [result.symbol, new Date(quote.asOf), now],
+      ));
     }
   }
   await Promise.all(writes);
+
+  // Project the log onto THIS user. A first visit has no checkpoint, so
+  // nothing was ever shown to retract or to have been quiet before.
+  if (!sinceTakenAt) return { quietForMs, retractions };
+
+  const [retracted, recent] = await Promise.all([
+    pool.query<{ symbol: string; z: string | null }>(
+      `SELECT symbol, z FROM symbol_significance_events
+        WHERE symbol = ANY($1) AND retracted_at IS NOT NULL AND retracted_at > $2`,
+      [symbols, sinceTakenAt],
+    ),
+    pool.query<{ symbol: string; quiet_for_ms: string | null }>(
+      `SELECT DISTINCT ON (symbol) symbol, quiet_for_ms
+         FROM symbol_significance_events
+        WHERE symbol = ANY($1) AND event_at > $2
+        ORDER BY symbol, event_at DESC`,
+      [symbols, sinceTakenAt],
+    ),
+  ]);
+
+  const nameBySymbol = new Map(results.map((r) => [r.symbol, r.name]));
+  for (const row of retracted.rows) {
+    retractions.push({
+      symbol: row.symbol,
+      name: nameBySymbol.get(row.symbol) ?? row.symbol,
+      previousZ: row.z === null ? null : Number(row.z),
+    });
+  }
+  for (const row of recent.rows) {
+    quietForMs.set(row.symbol, row.quiet_for_ms === null ? null : Number(row.quiet_for_ms));
+  }
   return { quietForMs, retractions };
 }
 

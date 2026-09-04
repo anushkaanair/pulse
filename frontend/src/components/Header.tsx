@@ -12,7 +12,7 @@ export function Header() {
   useEffect(() => {
     const saved = (typeof localStorage !== "undefined" && localStorage.getItem("smw-theme")) as "light" | "dark" | null;
     if (saved) { document.documentElement.setAttribute("data-theme", saved); setTheme(saved); }
-    else setTheme(window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    else { document.documentElement.setAttribute("data-theme", "light"); setTheme("light"); }
   }, []);
 
   const toggle = () => {
@@ -25,7 +25,7 @@ export function Header() {
   return (
     <div className="sticky top-0 z-30 border-b border-[var(--line)] bg-[var(--ground)]/80 backdrop-blur-md">
       <div className="max-w-7xl mx-auto px-4 h-10 flex items-center gap-2.5">
-        <Link href="/app" className="flex items-center gap-2">
+        <Link href="/" className="flex items-center gap-2">
           <span
             className="flex items-center justify-center w-6 h-6 rounded-lg"
             style={{ background: "var(--accent)", boxShadow: "0 3px 10px -3px color-mix(in srgb, var(--accent) 60%, transparent), inset 0 1px 0 rgba(255,255,255,.35)" }}

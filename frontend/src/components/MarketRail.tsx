@@ -50,39 +50,37 @@ export function MarketRail({ items = [] }: { items?: ChangeItem[] }) {
 
   return (
     <div className="flex items-stretch border-b border-[var(--line)] bg-[var(--surface)] text-[12px]">
-      {/* Real index + derived benchmark indices, all moving off the same real tick */}
-      <div className="hide-scrollbar flex shrink-0 items-center gap-4 overflow-x-auto border-r border-[var(--line)] px-4 py-2">
-        <span className="flex items-center gap-2">
-          <span className="dot-live h-1.5 w-1.5 rounded-full" style={{ color: "var(--green)", background: "var(--green)" }} />
-          <span className="font-semibold tracking-tight">NIFTY</span>
-          <span className="numbers text-[var(--ink)]">{nifty ? Number(nifty.price).toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "…"}</span>
-          <Move pct={niftyPct} />
-        </span>
-        {niftyPct !== null ? DERIVED_INDICES.map((idx) => (
-          <span key={idx.symbol} className="flex items-center gap-1.5 border-l border-[var(--line)] pl-4">
-            <span className="font-medium text-[var(--ink-2)]">{idx.symbol}</span>
-            <span className="numbers text-[var(--muted)]">{(idx.base * (1 + niftyPct / 100)).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
-            <Move pct={niftyPct} />
-          </span>
-        )) : null}
-      </div>
-
-      {/* Live ticker-tape of the symbols actually tracked here */}
       <div className="marquee-mask relative min-w-0 flex-1 overflow-hidden py-2">
-        {tape.length > 0 ? (
-          <div className="marquee-track">
-            {[...tape, ...tape].map((it, idx) => (
-              <span key={`${it.symbol}-${idx}`} className="mx-4 inline-flex items-center gap-1.5">
-                <span className="font-medium text-[var(--ink-2)]">{it.symbol}</span>
-                <span className="numbers text-[var(--muted)]">₹{Number(it.quote!.price).toFixed(2)}</span>
-                <Move pct={dayPct(it.quote)} />
+        <div className="marquee-track">
+          {[0, 1].map((copy) => (
+            <div key={copy} className="flex shrink-0 items-center">
+              <span className="mx-4 flex items-center gap-2">
+                <span className="dot-live h-1.5 w-1.5 rounded-full" style={{ color: "var(--green)", background: "var(--green)" }} />
+                <span className="font-semibold tracking-tight">NIFTY</span>
+                <span className="numbers text-[var(--ink)]">{nifty ? Number(nifty.price).toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "…"}</span>
+                <Move pct={niftyPct} />
               </span>
-            ))}
-          </div>
-        ) : (
-          <span className="px-4 text-[var(--muted)]">No stocks tracked yet — add a few to see them live here.</span>
-        )}
-        <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 w-12" style={{ background: "linear-gradient(to right, transparent, var(--surface))" }} />
+              {niftyPct !== null ? DERIVED_INDICES.map((idx) => (
+                <span key={idx.symbol} className="flex items-center gap-1.5 border-l border-[var(--line)] pl-4 mr-4">
+                  <span className="font-medium text-[var(--ink-2)]">{idx.symbol}</span>
+                  <span className="numbers text-[var(--muted)]">{(idx.base * (1 + niftyPct / 100)).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
+                  <Move pct={niftyPct} />
+                </span>
+              )) : null}
+              {tape.length > 0 ? tape.map((it, idx) => (
+                <span key={`${it.symbol}-${idx}`} className="flex items-center gap-1.5 border-l border-[var(--line)] pl-4 mr-4">
+                  <span className="font-medium text-[var(--ink-2)]">{it.symbol}</span>
+                  <span className="numbers text-[var(--muted)]">₹{Number(it.quote!.price).toFixed(2)}</span>
+                  <Move pct={dayPct(it.quote)} />
+                </span>
+              )) : (
+                <span className="flex items-center gap-1.5 border-l border-[var(--line)] pl-4 mr-4 text-[var(--muted)]">No stocks tracked yet — add a few to see them live here.</span>
+              )}
+            </div>
+          ))}
+        </div>
+        <div aria-hidden className="pointer-events-none absolute inset-y-0 left-0 w-12 z-10" style={{ background: "linear-gradient(to left, transparent, var(--surface))" }} />
+        <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 w-12 z-10" style={{ background: "linear-gradient(to right, transparent, var(--surface))" }} />
       </div>
     </div>
   );

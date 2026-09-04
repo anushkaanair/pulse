@@ -29,6 +29,11 @@ const ENV = {
   SIM_SEED: "1337",
   STALE_AFTER_SECONDS: "5",
   SIM_ADMIN: "true",
+  // This script exists to exceed sane request rates on purpose (20
+  // concurrent /changes every 150ms). Without this it hits its own
+  // rate limiter's default burst almost immediately and every later
+  // check downstream reads as server errors that were actually 429s.
+  RATE_LIMIT_RPM: "0",
   LOG_LEVEL: "warn",
 };
 
@@ -69,8 +74,8 @@ function spawnServer(): ChildProcess {
   child.on("error", (err) => console.error("spawn error", err));
   return child;
 }
-function killServer(child: ChildProcess) {
-  if (!child.pid) return;
+function killServer(child: ChildProcess | undefined) {
+  if (!child?.pid) return;
   try {
     process.kill(-child.pid, "SIGKILL"); // negative pid = whole process group
   } catch {
@@ -98,10 +103,19 @@ async function api(path: string, opts: RequestInit & { userId?: string } = {}) {
   return { status: res.status, body };
 }
 
+// Module-scoped so the top-level catch (bottom of file) can always reach
+// whichever spawned server was live when something threw. Bug found live:
+// a script error before the happy-path's own killServer() call — anywhere
+// in the ~250 lines between spawn and there — orphaned the child forever.
+// It kept ticking into the same DB every later run silently wrote against,
+// which is exactly the kind of thing this script exists to catch, not cause.
+let currentServer: ChildProcess | undefined;
+
 async function main() {
   console.log(`Torture test starting — server on :${PORT}, seed=${ENV.SIM_SEED}\n`);
 
   let server = spawnServer();
+  currentServer = server;
   await waitForHealth();
   console.log("server up\n");
 
@@ -121,6 +135,18 @@ async function main() {
     { id: "torture-user-B", symbols: slice(10, Math.min(30, allSymbols.length - 10 >= 0 ? 30 : allSymbols.length)) },
     { id: "torture-user-C", symbols: slice(20, Math.min(30, Math.max(allSymbols.length - 20, 5))) },
   ];
+
+  // This script has no fixture/teardown of its own and is routinely re-run
+  // against the SAME persistent dev database — a prior run's "torture"
+  // watchlist for these fixed user ids is still sitting there. Before
+  // migration 009 that was harmless (names weren't unique); since then the
+  // API correctly rejects a second same-named create, the id comes back
+  // undefined, and every downstream call 404s into a hard crash instead of
+  // a clean check() failure — found live, not hypothetical. Clearing any
+  // leftovers up front makes a re-run idempotent regardless of what an
+  // earlier run left behind, via SQL directly since this runs before any
+  // of these users have made an authenticated request.
+  await pool.query("DELETE FROM watchlists WHERE user_id = ANY($1) AND lower(name) = 'torture'", [users.map((u) => u.id)]);
 
   const watchlistIds: Record<string, string> = {};
   for (const u of users) {
@@ -203,6 +229,7 @@ async function main() {
   killServer(server);
   await sleep(500);
   server = spawnServer();
+  currentServer = server;
   await waitForHealth();
   console.log("respawned and healthy\n");
 
@@ -337,5 +364,6 @@ async function main() {
 
 main().catch((err) => {
   console.error("torture test crashed:", err);
+  killServer(currentServer); // never leave a ticking orphan behind on failure
   process.exit(1);
 });

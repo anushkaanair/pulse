@@ -6,63 +6,59 @@
    components reference --amber* as their "highlight" accent, so those
    tokens are mapped to the brand GREEN here — one place, no per-file edits. */
 :root {
-  --ground: #f7f8fa;
-  --ground-2: #eef0f4;
-  --surface: #ffffff;
-  --surface-2: #ffffff;
-  --surface-3: #f1f3f6;
-  --ink: #1a1d29;
-  --ink-dark: #1a1d29;
-  --ink-2: #4a4f5e;
-  --muted: #6b7280;
-  --line: #e6e8ec;
-  --line-2: #d7dae0;
-  --accent: #00b386;      /* green */
-  --accent-2: #4152e6;    /* blue  */
-  --green: #00b386;
-  --red: #e0402b;
-  /* highlight accent (badges, #1 mover, sort pills, focus, CTA, logo) */
-  --amber: #00b386;
-  --amber-2: #12c79a;
-  --amber-dim: #00795c;
-  /* Genuinely warm, distinct from --amber/--green above on purpose — used
-     ONLY where two states need to be tellable apart by color alone without
-     reading the text (e.g. "N worth a look" vs "Caught up" — both green
-     otherwise reads as "nothing's different here"). Not a general-purpose
-     accent; don't reach for this outside that specific need. */
-  --urgent: #b8862b;
-  --shadow-deck: rgba(20,32,50,.20);
+  --ground: #0a0a0b;
+  --ground-2: #0f1013;
+  --surface: #141519;
+  --surface-2: #17181e;
+  --surface-3: #1d1f27;
+  --ink: #f2f4f8;
+  --ink-dark: #f2f4f8;
+  --ink-2: #b4b8c4;
+  --muted: #8b90a0;
+  --line: #24262e;
+  --line-2: #2f323c;
+  --accent: #00d09c;      /* green */
+  --accent-2: #7c8cff;    /* blue  */
+  --green: #00d09c;
+  --red: #ff6b5b;
+  --amber: #00d09c;
+  --amber-2: #35e3b6;
+  --amber-dim: #00a37a;
+  --urgent: #e0a83e;
+  --shadow-deck: rgba(0,0,0,.9);
+  --hero-filter: invert(1) hue-rotate(180deg) brightness(1.2);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --ground: #0a0a0b;
-    --ground-2: #0f1013;
-    --surface: #141519;
-    --surface-2: #17181e;
-    --surface-3: #1d1f27;
-    --ink: #f2f4f8;
-    --ink-dark: #f2f4f8;
-    --ink-2: #b4b8c4;
-    --muted: #8b90a0;
-    --line: #24262e;
-    --line-2: #2f323c;
-    --accent: #00d09c;
-    --accent-2: #7c8cff;
-    --green: #00d09c;
-    --red: #ff6b5b;
-    --amber: #00d09c;
-    --amber-2: #35e3b6;
-    --amber-dim: #00a37a;
-    --urgent: #e0a83e;
-    --shadow-deck: rgba(0,0,0,.9);
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --ground: #f7f8fa;
+    --ground-2: #eef0f4;
+    --surface: #ffffff;
+    --surface-2: #ffffff;
+    --surface-3: #f1f3f6;
+    --ink: #1a1d29;
+    --ink-dark: #1a1d29;
+    --ink-2: #4a4f5e;
+    --muted: #6b7280;
+    --line: #e6e8ec;
+    --line-2: #d7dae0;
+    --accent: #00b386;
+    --accent-2: #4152e6;
+    --green: #00b386;
+    --red: #e0402b;
+    --amber: #00b386;
+    --amber-2: #12c79a;
+    --amber-dim: #00795c;
+    --urgent: #b8862b;
+    --shadow-deck: rgba(20,32,50,.20);
+    --hero-filter: none;
   }
 }
-:root[data-theme="dark"] {
-  --ground: #0a0a0b; --ground-2: #0f1013; --surface: #141519; --surface-2: #17181e; --surface-3: #1d1f27;
-  --ink: #f2f4f8; --ink-dark: #f2f4f8; --ink-2: #b4b8c4; --muted: #8b90a0; --line: #24262e; --line-2: #2f323c;
-  --accent: #00d09c; --accent-2: #7c8cff; --green: #00d09c; --red: #ff6b5b;
-  --amber: #00d09c; --amber-2: #35e3b6; --amber-dim: #00a37a; --urgent: #e0a83e; --shadow-deck: rgba(0,0,0,.9);
+:root[data-theme="light"] {
+  --ground: #f7f8fa; --ground-2: #eef0f4; --surface: #ffffff; --surface-2: #ffffff; --surface-3: #f1f3f6;
+  --ink: #1a1d29; --ink-dark: #1a1d29; --ink-2: #4a4f5e; --muted: #6b7280; --line: #e6e8ec; --line-2: #d7dae0;
+  --accent: #00b386; --accent-2: #4152e6; --green: #00b386; --red: #e0402b;
+  --amber: #00b386; --amber-2: #12c79a; --amber-dim: #00795c; --urgent: #b8862b; --shadow-deck: rgba(20,32,50,.20);
 }
 
 * { box-sizing: border-box; }

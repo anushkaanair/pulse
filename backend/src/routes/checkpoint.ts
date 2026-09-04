@@ -45,7 +45,12 @@ export function checkpointRouter(pool: Pool) {
     if (cacheKey) {
       idempotencyCache.set(cacheKey, attempt);
       attempt
-        .then(() => setTimeout(() => idempotencyCache.delete(cacheKey), IDEMPOTENCY_TTL_MS))
+        // unref: a five-minute eviction timer must not be a reason the
+        // process refuses to exit. Without it a burst of checkpoints keeps
+        // Node alive for the full TTL after everything else has shut down —
+        // which the torture script's SIGKILL/respawn cycle would mask, but a
+        // clean shutdown would not.
+        .then(() => setTimeout(() => idempotencyCache.delete(cacheKey), IDEMPOTENCY_TTL_MS).unref?.())
         .catch(() => idempotencyCache.delete(cacheKey)); // failures aren't cached — retriable immediately
     }
 

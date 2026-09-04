@@ -6,6 +6,13 @@
 //
 // Usage: npm run scale-check   (from backend/, with the DB up)
 
+// Load .env the same way the server does. Without this the script
+// silently falls back to the hardcoded default below, so a project
+// whose DATABASE_URL points anywhere else (a non-default port, a
+// remote database) spawns a server that cannot reach its own DB and
+// fails as an opaque "server did not become healthy in time".
+import "dotenv/config";
+
 import { spawn, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -19,7 +26,9 @@ const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://postgres:postgres@l
 const N_SYMBOLS = 500;
 const N_USERS = 50;
 
-const ENV = { ...process.env, PORT: String(PORT), DATABASE_URL, TICK_MS: "500", SIM_ADMIN: "true", LOG_LEVEL: "warn" };
+const ENV = { ...process.env, PORT: String(PORT), DATABASE_URL, TICK_MS: "500", SIM_ADMIN: "true",
+  // These scripts exist to exceed sane request rates on purpose.
+  RATE_LIMIT_RPM: "0", LOG_LEVEL: "warn" };
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));

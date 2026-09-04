@@ -7,7 +7,6 @@ import { expect, test } from "@playwright/test";
 test("a stale symbol shows its badge without a feed-wide outage", async ({ page }) => {
   await page.addInitScript(() => sessionStorage.setItem("pulse-entered", "1"));
   await page.goto("/app");
-  await page.getByRole("link", { name: /Market watch/ }).click();
 
   const ideaRow = page.locator("li", { hasText: "IDEA" });
   await expect(ideaRow.getByText(/old$/)).toBeVisible();
@@ -26,7 +25,6 @@ test("toggling a feed outage shows the degraded banner, and it never blanks the 
   await page.getByRole("checkbox").first().click();
 
   await page.getByRole("link", { name: "Back to watchlists" }).click();
-  await page.getByRole("link", { name: /Market watch/ }).click();
 
   await expect(page.getByRole("status")).toContainText("Data may be delayed");
   // The list is still there — degraded feed never means a blank screen.

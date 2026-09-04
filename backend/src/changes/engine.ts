@@ -42,6 +42,10 @@ export interface EngineConfig {
   volumeSpikeMultiple: number;
   gapPct: number;
   sensitivityMultiplier: Record<Sensitivity, number>;
+  // Longest absence the √n significance scaling is allowed to model. See the
+  // horizon comment in changeFor() — past this the bar stops growing rather
+  // than extrapolating a 50-tick σ estimate into territory it can't support.
+  maxHorizonMs: number;
 }
 
 export interface Change {
@@ -163,12 +167,30 @@ function changeFor(
   // long the user has been away. Capping n there was a bug: at the default
   // tickMs, historyWindow=50 caps n at ~50 seconds, silently disabling the
   // away-aware scaling for anyone gone more than a minute — exactly the
-  // multi-day-absence case this exists to handle. Growing n only shrinks z
-  // toward 0, so it's numerically safe with no upper bound needed beyond
-  // sane float range; MAX_ELAPSED_TICKS just guards against a pathological
-  // clock/timestamp bug producing an absurd elapsedMs.
-  const MAX_ELAPSED_TICKS = 30 * 24 * 3600; // ~30 days at tickMs=1000
-  const n = Math.min(MAX_ELAPSED_TICKS, Math.max(1, (elapsedMs ?? cfg.tickMs) / cfg.tickMs));
+  // multi-day-absence case this exists to handle.
+  //
+  // But it is capped at `maxHorizonMs`, and that cap is load-bearing rather
+  // than a guard against absurd clocks. √n scaling is correct for a
+  // driftless random walk, and following it without limit produces a bar
+  // that is defensible in theory and wrong in practice:
+  //
+  //   σ here is fit on HISTORY_WINDOW ticks (50 seconds at TICK_MS=1000).
+  //   Extrapolating that to a 3-day absence multiplies it by √259200 ≈ 509,
+  //   which (a) amplifies the estimation error of a 50-sample estimate by
+  //   the same factor, and (b) assumes per-second volatility compounds
+  //   cleanly across days — it does not, because real multi-day returns
+  //   mean-revert and cluster rather than diffusing freely.
+  //
+  // The measured consequence was a ~13% bar after three days: a genuine 8%
+  // move over a long weekend was reported as "nothing meaningful changed."
+  // That silently inverts the product's promise — the longer you are away,
+  // the less it will tell you — which is the opposite of what a catch-up
+  // screen is for. So the horizon stops growing at one trading session:
+  // beyond that the bar holds steady (~4% at a realistic 2%/day σ) instead
+  // of inflating past anything a real move could clear. Set
+  // MAX_HORIZON_HOURS very high to restore the old unbounded behaviour.
+  const horizonMs = Math.min(elapsedMs ?? cfg.tickMs, cfg.maxHorizonMs);
+  const n = Math.max(1, horizonMs / cfg.tickMs);
   let z: number | null = null;
   let confidence: "high" | "low" = "high";
   let isMove = false;

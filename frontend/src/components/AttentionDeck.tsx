@@ -94,8 +94,10 @@ export function AttentionDeck({
     const node = stage.current;
     if (!node) return undefined;
     const onWheel = (event: WheelEvent) => {
-      if (expandedRef.current) return;
-      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      // Only trap horizontal scrolling, let vertical scrolls pass to the page
+      if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) return;
+      
+      const delta = event.deltaX;
       if (Math.abs(delta) < 4) return;
       const next = delta > 0 ? activeRef.current + 1 : activeRef.current - 1;
       if (next < 0 || next > countRef.current - 1) return;
@@ -104,6 +106,7 @@ export function AttentionDeck({
       if (now - wheelLock.current < 260) return;
       wheelLock.current = now;
       setActive(next);
+      setExpanded(true);
     };
     node.addEventListener("wheel", onWheel, { passive: false });
     return () => node.removeEventListener("wheel", onWheel);
@@ -113,7 +116,7 @@ export function AttentionDeck({
   // render (React's sanctioned pattern) rather than in an effect.
   const deckKey = items.map((i) => i.symbol).join(",");
   const [seenKey, setSeenKey] = useState(deckKey);
-  if (deckKey !== seenKey) { setSeenKey(deckKey); setActive(0); setExpanded(false); }
+  if (deckKey !== seenKey) { setSeenKey(deckKey); setActive(0); setExpanded(true); }
 
   if (items.length === 0) return null;
 
@@ -126,8 +129,8 @@ export function AttentionDeck({
     setParallax({ x: ((event.clientY - r.top) / r.height - 0.5) * -7, y: ((event.clientX - r.left) / r.width - 0.5) * 16 });
   };
   const onKey = (event: React.KeyboardEvent) => {
-    if (event.key === "ArrowRight") { event.preventDefault(); setActive((a) => Math.min(items.length - 1, a + 1)); }
-    if (event.key === "ArrowLeft") { event.preventDefault(); setActive((a) => Math.max(0, a - 1)); }
+    if (event.key === "ArrowRight") { event.preventDefault(); setActive((a) => Math.min(items.length - 1, a + 1)); setExpanded(true); }
+    if (event.key === "ArrowLeft") { event.preventDefault(); setActive((a) => Math.max(0, a - 1)); setExpanded(true); }
     if (event.key === "Escape" && expanded) { event.preventDefault(); setExpanded(false); }
   };
 
@@ -141,7 +144,7 @@ export function AttentionDeck({
       className="relative select-none overflow-hidden rounded-2xl border border-[var(--line)] outline-none"
       style={{
         height: expanded ? dims.stageH + 186 : dims.stageH, perspective: 1500, perspectiveOrigin: "50% 42%",
-        background: "radial-gradient(120% 90% at 22% 0%, rgba(0,190,140,.09), transparent 58%), linear-gradient(175deg, var(--surface-2), var(--ground-2))",
+        background: "radial-gradient(120% 90% at 22% 0%, rgba(0,190,140,.04), transparent 58%), linear-gradient(175deg, var(--surface-2), var(--ground-2))",
         transition: "height .5s cubic-bezier(.22,1.4,.36,1)",
       }}
     >
@@ -180,7 +183,7 @@ export function AttentionDeck({
           const { zScore, zRaw, sectorAdjusted } = item.change;
           const positive = zScore !== null && zScore > 0;
           const magnitude = zScore === null ? 0 : Math.min(1, Math.abs(zScore) / 3);
-          const rim = 0.22 + magnitude * 0.55;
+          const rim = 0.08 + magnitude * 0.25; // significantly reduced gradient intensity
           const dim = isFront ? 1 : Math.max(0.3, 1 - behind * 0.26);
           const isTop = topMover?.symbol === item.symbol;
           const rawDiffers = sectorAdjusted && zScore !== null && zRaw !== null && Math.abs(Math.abs(zRaw) - Math.abs(zScore)) >= 0.3;
@@ -201,7 +204,7 @@ export function AttentionDeck({
               aria-current={isFront}
               aria-expanded={isFront ? expanded : undefined}
               aria-label={isFront ? `${item.symbol}: ${item.change.why}. Open details` : `Bring ${item.symbol} to the front`}
-              onClick={() => (isFront ? setExpanded((o) => !o) : (setActive(index), setExpanded(false)))}
+              onClick={() => (isFront ? setExpanded((o) => !o) : (setActive(index), setExpanded(true)))}
               onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); isFront ? setExpanded((o) => !o) : setActive(index); } }}
               className="absolute left-0 top-0 block cursor-pointer rounded-2xl p-px text-left"
               style={{
@@ -213,14 +216,14 @@ export function AttentionDeck({
                 transition: "transform .5s cubic-bezier(.22,1.4,.36,1), opacity .35s ease",
                 background: `linear-gradient(150deg, rgba(0,190,140,${rim}), var(--line-2) 45%, var(--line) 100%)`,
                 boxShadow: isFront
-                  ? `0 42px 70px -28px var(--shadow-deck), 0 0 60px -18px rgba(0,190,140,${rim * 0.85})`
+                  ? `0 42px 70px -28px var(--shadow-deck), 0 0 60px -18px rgba(0,190,140,${rim * 0.4})`
                   : "0 30px 54px -30px var(--shadow-deck)",
                 filter: isFront ? "none" : `saturate(${1 - behind * 0.18}) blur(${behind * 0.6}px)`,
               }}
             >
               <div className="relative overflow-hidden rounded-[15px]" style={{ padding: expanded ? 20 : 13, minHeight: dims.cardH, background: "linear-gradient(168deg, var(--surface-2), var(--surface))", transition: "padding .3s ease, min-height .5s cubic-bezier(.22,1.4,.36,1)" }}>
-                <span aria-hidden="true" className="pointer-events-none absolute inset-0" style={{ background: "linear-gradient(135deg, rgba(255,255,255,.055), transparent 42%)" }} />
-                <span aria-hidden="true" className="pointer-events-none absolute -right-10 -top-12 h-32 w-32 rounded-full" style={{ filter: "blur(28px)", background: `rgba(0,190,140,${(16 + magnitude * 32) / 100})` }} />
+                <span aria-hidden="true" className="pointer-events-none absolute inset-0" style={{ background: "linear-gradient(135deg, rgba(255,255,255,.03), transparent 42%)" }} />
+                <span aria-hidden="true" className="pointer-events-none absolute -right-10 -top-12 h-32 w-32 rounded-full" style={{ filter: "blur(28px)", background: `rgba(0,190,140,${(4 + magnitude * 12) / 100})` }} />
 
                 {!expanded ? (
                   // Compact rest state: identity + price + σ only. The full
@@ -236,7 +239,7 @@ export function AttentionDeck({
                     <div className="mt-1.5 flex items-end justify-between gap-1.5">
                       <span className="numbers text-[13px] font-semibold">₹{Number(item.quote.price).toFixed(0)}</span>
                       <span
-                        className="rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold"
+                        className="rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold whitespace-nowrap"
                         title={zScore === null ? undefined : `${Math.abs(zScore).toFixed(1)}σ from ${item.symbol}'s own normal move`}
                         style={zScore === null ? { color: "var(--muted)", background: "var(--surface-3)" } : { color: positive ? "var(--green)" : "var(--red)", background: positive ? "rgba(46,204,143,.13)" : "rgba(255,107,91,.13)" }}
                       >
@@ -277,7 +280,7 @@ export function AttentionDeck({
                     <span className="numbers text-[19px] font-semibold tracking-tight">₹{Number(item.quote.price).toFixed(2)}</span>
                     <span className="flex flex-wrap justify-end items-center gap-1.5">
                       <span
-                        className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                        className="rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap"
                         title={zScore === null ? undefined : `${Math.abs(zScore).toFixed(1)} standard deviations from ${item.symbol}'s own normal move${sectorAdjusted ? ", sector-adjusted" : ""}`}
                         style={zScore === null
                           ? { color: "var(--muted)", background: "var(--surface-3)" }
@@ -309,7 +312,7 @@ export function AttentionDeck({
         // rather than something a user has to notice on their own.
         <button
           type="button"
-          onClick={() => setActive((a) => Math.min(items.length - 1, a + 1))}
+          onClick={() => { setActive((a) => Math.min(items.length - 1, a + 1)); setExpanded(true); }}
           disabled={active >= items.length - 1}
           aria-label="Next"
           className="absolute right-3 top-1/2 z-20 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-[var(--muted)] transition-colors hover:text-[var(--ink)] disabled:opacity-0"
@@ -325,7 +328,7 @@ export function AttentionDeck({
             <button
               key={item.symbol}
               aria-label={`Show ${item.symbol}`}
-              onClick={() => { setActive(index); setExpanded(false); }}
+              onClick={() => { setActive(index); setExpanded(true); }}
               className="h-1.5 rounded-full transition-all"
               style={{ width: index === active ? 20 : 6, background: index === active ? "var(--amber)" : "var(--line-2)" }}
             />

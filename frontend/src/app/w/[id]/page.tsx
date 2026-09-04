@@ -12,7 +12,7 @@ import { InvestmentsCard } from "@/components/InvestmentsCard";
 import { MarketRail } from "@/components/MarketRail";
 import { MarketTrends } from "@/components/MarketTrends";
 import { WatchlistRow } from "@/components/WatchlistRow";
-import { api, ApiRequestError, type ChangesResponse, type ConflictResponse, type Sensitivity, type Sparklines, type Watchlist, type WatchlistItem } from "@/lib/api";
+import { api, ApiRequestError, type ChangesResponse, type ConflictResponse, type Sensitivity, type Sparklines, type Watchlist, type WatchlistSummary, type WatchlistItem } from "@/lib/api";
 
 // Below this, real DOM rows are simpler and there's no cost to justify
 // virtualizing. Above it, a plain map() renders every row's DOM eagerly
@@ -28,6 +28,7 @@ export default function WatchlistPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [watchlist, setWatchlist] = useState<Watchlist>();
+  const [allWatchlists, setAllWatchlists] = useState<WatchlistSummary[]>([]);
   const [newListOpen, setNewListOpen] = useState(false);
   const [newListName, setNewListName] = useState("");
   const [newListBusy, setNewListBusy] = useState(false);
@@ -65,7 +66,7 @@ export default function WatchlistPage() {
     // Recurring/background-triggered polls DO respect visibility — no
     // point spending requests on a tab nobody's looking at.
     const poll = async () => { if (document.visibilityState !== "hidden") await fetchChanges(); };
-    const begin = async () => { try { const list = await api.watchlist(id); if (!cancelled) setWatchlist(list); await fetchChanges(); } catch (cause) { if (!cancelled) setError(cause); } };
+    const begin = async () => { try { const list = await api.watchlist(id); if (!cancelled) setWatchlist(list); await fetchChanges(); api.watchlists().then(wl => { if (!cancelled) setAllWatchlists(wl); }).catch(() => {}); } catch (cause) { if (!cancelled) setError(cause); } };
     const visibility = () => { if (document.visibilityState === "visible") void poll(); };
     void begin();
     timer = setInterval(() => void poll(), 15_000);
@@ -154,13 +155,21 @@ export default function WatchlistPage() {
     <main className="min-h-screen">
       <FeedStatusBar status={changes.feed.status} lagSeconds={changes.feed.lagSeconds} />
       <MarketRail items={changes.items} />
-      <div className="mx-auto max-w-7xl px-4 pt-3">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <h1 className="text-xl font-semibold tracking-tight">{watchlist.name}</h1>
+      <div className="mx-auto max-w-7xl px-4 pt-3 pb-2">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+          {allWatchlists.map(wl => (
+            <Link 
+              key={wl.id} 
+              href={`/w/${wl.id}`}
+              className={`px-4 py-1.5 rounded-full text-[14px] font-medium transition-colors ${wl.id === id ? 'bg-[var(--accent)] text-white shadow-md shadow-[var(--accent)]/20' : 'bg-[var(--surface-2)] text-[var(--muted)] hover:text-[var(--ink)]'}`}
+            >
+              {wl.name}
+            </Link>
+          ))}
           <button
             type="button"
             onClick={() => { setNewListName(""); setNewListError(undefined); setNewListOpen(true); }}
-            className="flex items-center gap-1 rounded-full border border-[var(--line-2)] px-2.5 py-1 text-[11px] font-medium text-[var(--ink-2)] transition-colors hover:border-[var(--amber)] hover:text-[var(--amber)]"
+            className="flex items-center gap-1.5 rounded-full border border-dashed border-[var(--line-2)] px-3 py-1.5 text-[13px] font-medium text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] ml-1"
           >
             <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2.5v11M2.5 8h11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
             Watchlist
@@ -221,10 +230,57 @@ export default function WatchlistPage() {
 
           {/* Since You Last Looked */}
           <section className="mb-4">
-            <h2 className="text-lg font-medium mb-1 tracking-tight">Most meaningful changes</h2>
-            <p className="text-sm text-[var(--muted)] mb-3">{changes.digest}</p>
+            <h2 className="text-lg font-medium mb-3 tracking-tight">Most meaningful changes</h2>
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              <span className="text-sm font-medium text-[var(--muted)] whitespace-nowrap">
+                {changes.baseline.takenAt ? `Since ${away(Math.floor((Date.now() - new Date(changes.baseline.takenAt).getTime()) / 1000))} ago:` : "Since your last visit:"}
+              </span>
+              
+              {changes.summary.meaningful > 0 ? (
+                <>
+                  <span className="rounded-full bg-[var(--amber)]/15 px-2.5 py-1 text-[11px] font-bold text-[var(--amber)] whitespace-nowrap border border-[var(--amber)]/30 shadow-sm">
+                    {changes.summary.meaningful} {changes.summary.meaningful === 1 ? "thing" : "things"} worth a look
+                  </span>
+                  
+                  {rankedForAttention.slice(0, 3).map((item) => (
+                    <span key={item.symbol} className="rounded-full border border-[var(--line-2)] bg-[var(--surface-3)] px-2.5 py-1 text-[11px] font-medium text-[var(--ink)] whitespace-nowrap shadow-sm">
+                      <span className="font-semibold">{item.symbol}</span>{" "}
+                      <span style={{ color: Number(item.change.pctSincePrev) >= 0 ? "var(--green)" : "var(--red)" }}>
+                        {Number(item.change.pctSincePrev) > 0 ? "+" : ""}{item.change.pctSincePrev}%
+                      </span>{" "}
+                      <span className="text-[var(--muted)]">({item.change.zScore !== null ? Math.abs(item.change.zScore).toFixed(1) + "σ" : "New"})</span>
+                    </span>
+                  ))}
+                  
+                  {rankedForAttention.length > 3 && (
+                    <span className="rounded-full border border-[var(--line)] bg-[var(--surface-2)] px-2.5 py-1 text-[11px] font-medium text-[var(--muted)] whitespace-nowrap">
+                      +{rankedForAttention.length - 3} more
+                    </span>
+                  )}
+
+                  {changes.summary.total - changes.summary.meaningful > 0 && (
+                    <span className="rounded-full border border-[var(--line)] bg-[var(--surface-2)] px-2.5 py-1 text-[11px] font-medium text-[var(--muted)] whitespace-nowrap">
+                      {changes.summary.total - changes.summary.meaningful} others: nothing meaningful
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="rounded-full border border-[var(--line)] bg-[var(--surface-2)] px-2.5 py-1 text-[11px] font-medium text-[var(--muted)] whitespace-nowrap">
+                  No major updates
+                </span>
+              )}
+            </div>
             {changes.summary.meaningful === 0 ? (
-               <p className="text-sm text-[var(--muted)] bg-[var(--surface)] p-6 rounded-2xl border border-[var(--line)]">Nothing meaningful changed since {changes.baseline.takenAt ? new Date(changes.baseline.takenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "your last visit"}.</p>
+               <div className="relative">
+                 <p className="text-[13px] font-medium text-[var(--muted)] mb-3 bg-[var(--surface-2)] inline-block px-3 py-1.5 rounded-lg border border-[var(--line)]">
+                   No major updates since {changes.baseline.takenAt ? new Date(changes.baseline.takenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "your last visit"}. Showing latest movements:
+                 </p>
+                 {changes.items.length > 0 ? (
+                   <AttentionDeck items={changes.items.slice(0, 3)} sparklines={sparklines} topMover={changes.topMover} onRefresh={markSeen} refreshing={marking} />
+                 ) : (
+                   <p className="text-sm text-[var(--muted)] bg-[var(--surface)] p-6 rounded-2xl border border-[var(--line)]">Your watchlist is completely empty.</p>
+                 )}
+               </div>
             ) : (
                <AttentionDeck items={rankedForAttention} sparklines={sparklines} topMover={changes.topMover} onRefresh={markSeen} refreshing={marking} />
             )}

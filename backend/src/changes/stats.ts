@@ -29,34 +29,77 @@ export interface SymbolStats {
 // indistinguishable from a fresh one for ranking.
 const STATS_TTL_MS = 5_000;
 const statsCache = new Map<string, { at: number; stats: SymbolStats }>();
+// Symbols come and go from watchlists; without a bound this map is a slow
+// leak of every symbol the process has ever seen. Entries are tiny, so the
+// cap is generous — it exists to make growth bounded, not tight.
+const STATS_CACHE_MAX = 5_000;
+// In-flight batch computations, keyed per symbol. A TTL cache alone still
+// stampedes at expiry: N concurrent /changes calls all miss simultaneously
+// and all run the same heavy history query. Sharing the PROMISE (the same
+// trick routes/checkpoint.ts uses for idempotency) collapses them to one.
+const inflight = new Map<string, Promise<SymbolStats>>();
 // The index's own return series is shared by every symbol's beta estimate
 // in a given call, so it's fetched and cached once per call, not once per
 // symbol — same "shared, not per-user" cost shape as the ingestor itself.
-let indexReturnsCache: { at: number; returns: number[] } | null = null;
+// Promise-cached for the same stampede reason as the per-symbol stats.
+let indexReturnsCache: { at: number; returns: Promise<number[]> } | null = null;
 
 export async function loadStats(pool: Pool, symbols: string[]): Promise<Map<string, SymbolStats>> {
   const out = new Map<string, SymbolStats>();
   if (symbols.length === 0) return out;
 
   const nowMs = Date.now();
-  const stale: string[] = [];
-  for (const s of symbols) {
+  const cold: string[] = [];
+  const awaited: { symbol: string; promise: Promise<SymbolStats> }[] = [];
+  for (const s of new Set(symbols)) {
     const c = statsCache.get(s);
-    if (c && nowMs - c.at < STATS_TTL_MS) out.set(s, c.stats);
-    else stale.push(s);
+    if (c && nowMs - c.at < STATS_TTL_MS) { out.set(s, c.stats); continue; }
+    const pending = inflight.get(s);
+    if (pending) awaited.push({ symbol: s, promise: pending });
+    else cold.push(s);
   }
-  if (stale.length === 0) return out;
-  symbols = stale;
+
+  // One batch for everything genuinely cold, registered per symbol so a
+  // concurrent caller asking for any subset joins this same computation.
+  if (cold.length > 0) {
+    const batch = computeBatch(pool, cold, nowMs);
+    for (const s of cold) {
+      const p = batch.then((m) => m.get(s)!);
+      inflight.set(s, p);
+      // Never leave a rejected promise cached: a transient DB error must not
+      // pin every later request to the same failure.
+      void p.catch(() => {}).finally(() => { if (inflight.get(s) === p) inflight.delete(s); });
+      awaited.push({ symbol: s, promise: p });
+    }
+  }
+
+  for (const { symbol, promise } of awaited) out.set(symbol, await promise);
+  return out;
+}
+
+async function computeBatch(pool: Pool, symbols: string[], nowMs: number): Promise<Map<string, SymbolStats>> {
+  const out = new Map<string, SymbolStats>();
 
   const [{ rows }, indexReturns] = await Promise.all([
     pool.query<{ symbol: string; price: string; volume: string }>(
-      `SELECT symbol, price, volume FROM (
-         SELECT symbol, price, volume, as_of,
-                row_number() OVER (PARTITION BY symbol ORDER BY as_of DESC) AS rn
-           FROM quote_history
-          WHERE symbol = ANY($1)
-       ) t WHERE rn <= $2
-       ORDER BY symbol, as_of ASC`,
+      // LATERAL, not a window function. `row_number() OVER (PARTITION BY
+      // symbol ...) WHERE rn <= N` forces Postgres to read and sort EVERY
+      // history row for each symbol before discarding all but N — cost grows
+      // with total history retained, so it is fast on a fresh database and
+      // quietly degrades forever as quote_history accumulates (~86k rows per
+      // symbol per day at tickMs=1000). LATERAL + LIMIT is a backward
+      // index scan on the (symbol, as_of) primary key that stops after N
+      // rows: cost is a function of the window, not of history size.
+      `SELECT s.symbol, h.price, h.volume
+         FROM unnest($1::text[]) AS s(symbol)
+         CROSS JOIN LATERAL (
+           SELECT price, volume, as_of
+             FROM quote_history
+            WHERE symbol = s.symbol
+            ORDER BY as_of DESC
+            LIMIT $2
+         ) h
+        ORDER BY s.symbol, h.as_of ASC`,
       [symbols, config.historyWindow],
     ),
     loadIndexReturns(pool, nowMs),
@@ -110,11 +153,36 @@ export async function loadStats(pool: Pool, symbols: string[]): Promise<Map<stri
     out.set(symbol, stats);
     statsCache.set(symbol, { at: nowMs, stats });
   }
+  evictStale(nowMs);
   return out;
+}
+
+// Map preserves insertion order, so the oldest surviving entries are the
+// ones iterated first — dropping expired entries, then the oldest, keeps
+// the map bounded without needing an LRU structure for what is a cache of
+// small plain objects.
+function evictStale(nowMs: number) {
+  if (statsCache.size <= STATS_CACHE_MAX) return;
+  for (const [symbol, entry] of statsCache) {
+    if (nowMs - entry.at >= STATS_TTL_MS) statsCache.delete(symbol);
+  }
+  for (const symbol of statsCache.keys()) {
+    if (statsCache.size <= STATS_CACHE_MAX) break;
+    statsCache.delete(symbol);
+  }
 }
 
 async function loadIndexReturns(pool: Pool, nowMs: number): Promise<number[]> {
   if (indexReturnsCache && nowMs - indexReturnsCache.at < STATS_TTL_MS) return indexReturnsCache.returns;
+  const promise = fetchIndexReturns(pool);
+  indexReturnsCache = { at: nowMs, returns: promise };
+  // A failed fetch must not be cached for the whole TTL — clear it so the
+  // next caller retries instead of inheriting the rejection.
+  void promise.catch(() => { if (indexReturnsCache?.returns === promise) indexReturnsCache = null; });
+  return promise;
+}
+
+async function fetchIndexReturns(pool: Pool): Promise<number[]> {
   const { rows } = await pool.query<{ price: string }>(
     `SELECT price FROM quote_history WHERE symbol = $1 ORDER BY as_of DESC LIMIT $2`,
     [MARKET_INDEX_SYMBOL, config.historyWindow],
@@ -124,7 +192,6 @@ async function loadIndexReturns(pool: Pool, nowMs: number): Promise<number[]> {
   for (let i = 1; i < prices.length; i++) {
     if (prices[i - 1] > 0) returns.push((prices[i] - prices[i - 1]) / prices[i - 1]);
   }
-  indexReturnsCache = { at: nowMs, returns };
   return returns;
 }
 
@@ -143,6 +210,15 @@ function covariance(xs: number[], ys: number[]) {
   return mean(xs.map((x, i) => (x - mx) * (ys[i] - my)));
 }
 
+// Sample standard deviation (Bessel's correction, ÷ n−1). These returns are
+// a SAMPLE of the symbol's return distribution used to estimate its true
+// volatility, not the whole population — dividing by n biases sigma low,
+// which makes every z-score slightly too large and the "meaningful" bar
+// slightly too hot. At the minHistory=20 floor that bias is ~2.6%.
+// `variance()` above stays population: it is only used as the denominator
+// of beta (cov/var), where the correction cancels out of the ratio.
 function stdev(xs: number[]) {
-  return Math.sqrt(variance(xs));
+  if (xs.length < 2) return 0;
+  const m = mean(xs);
+  return Math.sqrt(xs.reduce((s, x) => s + (x - m) ** 2, 0) / (xs.length - 1));
 }

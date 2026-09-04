@@ -159,6 +159,21 @@ describe("Ingestor upsert (real Postgres)", () => {
     expect(Number(row.price)).toBe(100.5); // not regressed
   });
 
+  it("prunes history older than the retention window, and keeps everything inside it", async () => {
+    const provider = new ManualProvider();
+    const ingestor = new Ingestor(pool, provider);
+    const old = new Date(Date.now() - 90 * 86_400_000);
+    const recent = new Date(Date.now() - 60_000);
+    await pool.query("INSERT INTO quote_history (symbol, as_of, price, volume) VALUES ($1,$2,100,1000)", [symbol, old]);
+    await pool.query("INSERT INTO quote_history (symbol, as_of, price, volume) VALUES ($1,$2,101,1001)", [symbol, recent]);
+
+    await ingestor.pruneHistory();
+
+    const { rows } = await pool.query<{ as_of: Date }>("SELECT as_of FROM quote_history WHERE symbol = $1", [symbol]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].as_of.getTime()).toBe(recent.getTime());
+  });
+
   it("concurrent ticks for different symbols never interfere with each other", async () => {
     const provider = new ManualProvider();
     const ingestor = new Ingestor(pool, provider);

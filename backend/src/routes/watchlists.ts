@@ -174,43 +174,65 @@ export function watchlistsRouter(pool: Pool) {
     }
   });
 
+  // The mutation and its version bump must commit together: `version` is
+  // what the bulk-edit conflict check reads, so a crash between the two
+  // statements would leave a list whose contents changed but whose version
+  // didn't — silently defeating the optimistic-concurrency guarantee that
+  // PUT /items depends on. Same reasoning as POST /items and PUT /items,
+  // which were already transactional; these two were not.
   r.delete("/api/watchlists/:id/items/:symbol", async (req, res, next) => {
+    // pool.connect() must be inside the try — see checkpoint.ts for why.
+    let client: PoolClient | undefined;
     try {
+      client = await pool.connect();
       if (!isUuid(req.params.id)) throw new AppError(404, "NOT_FOUND", "Watchlist not found");
       const symbol = req.params.symbol.toUpperCase();
-      const del = await pool.query(
+      await client.query("BEGIN");
+      const del = await client.query(
         `DELETE FROM watchlist_items wi USING watchlists w
           WHERE wi.watchlist_id = w.id AND w.id = $1 AND w.user_id = $2 AND wi.symbol = $3`,
         [req.params.id, req.userId, symbol],
       );
       if (del.rowCount === 1) {
-        await pool.query(
+        await client.query(
           "UPDATE watchlists SET version = version + 1, updated_at = now() WHERE id = $1",
           [req.params.id],
         );
       }
+      await client.query("COMMIT");
       res.json(await loadWatchlist(pool, req.userId, req.params.id));
     } catch (err) {
+      await client?.query("ROLLBACK").catch(() => {});
       next(err);
+    } finally {
+      client?.release();
     }
   });
 
   // Per-symbol sensitivity: quiet raises the bar for "meaningful", loud lowers it.
   r.patch("/api/watchlists/:id/items/:symbol", async (req, res, next) => {
+    // pool.connect() must be inside the try — see checkpoint.ts for why.
+    let client: PoolClient | undefined;
     try {
+      client = await pool.connect();
       if (!isUuid(req.params.id)) throw new AppError(404, "NOT_FOUND", "Watchlist not found");
       const { sensitivity } = z.object({ sensitivity: z.enum(["quiet", "normal", "loud"]) }).parse(req.body);
       const symbol = req.params.symbol.toUpperCase();
-      const upd = await pool.query(
+      await client.query("BEGIN");
+      const upd = await client.query(
         `UPDATE watchlist_items wi SET sensitivity = $4 FROM watchlists w
           WHERE wi.watchlist_id = w.id AND w.id = $1 AND w.user_id = $2 AND wi.symbol = $3`,
         [req.params.id, req.userId, symbol, sensitivity],
       );
       if (upd.rowCount === 0) throw new AppError(404, "NOT_FOUND", "Symbol not on this watchlist");
-      await pool.query("UPDATE watchlists SET version = version + 1, updated_at = now() WHERE id = $1", [req.params.id]);
+      await client.query("UPDATE watchlists SET version = version + 1, updated_at = now() WHERE id = $1", [req.params.id]);
+      await client.query("COMMIT");
       res.json(await loadWatchlist(pool, req.userId, req.params.id));
     } catch (err) {
+      await client?.query("ROLLBACK").catch(() => {});
       next(err);
+    } finally {
+      client?.release();
     }
   });
 
@@ -251,16 +273,30 @@ export function watchlistsRouter(pool: Pool) {
           throw new AppError(422, "UNKNOWN_SYMBOL", `Unknown symbol(s): ${bad.join(", ")}`);
         }
       }
-      await client.query("DELETE FROM watchlist_items WHERE watchlist_id = $1", [req.params.id]);
+      // Diff, don't nuke-and-recreate. A bulk replace only expresses which
+      // symbols should be present — it says nothing about the per-symbol
+      // state attached to the ones that stay. Deleting every row and
+      // re-inserting silently reset `sensitivity` to its 'normal' default
+      // and `added_at` to now() for every SURVIVING symbol: a user who had
+      // marked TCS "quiet" lost that setting just by adding an unrelated
+      // symbol, and the list visibly reordered itself. Both are data loss
+      // the user never asked for, from an operation that had no business
+      // touching those columns. Regression test in __tests__/watchlists.test.ts.
+      await client.query(
+        "DELETE FROM watchlist_items WHERE watchlist_id = $1 AND symbol <> ALL($2::text[])",
+        [req.params.id, unique],
+      );
       if (unique.length > 0) {
         // Single multi-row INSERT via UNNEST, not N sequential round-trips.
         // Found via scripts/scale-check.ts: a 500-symbol bulk PUT looping
         // one INSERT per row took ~500ms of pure round-trip time before
         // any real work, and that cost only grows with watchlist size —
         // exactly the "how does this scale" case the brief asks about.
+        // ON CONFLICT DO NOTHING because survivors are still present now.
         await client.query(
           `INSERT INTO watchlist_items (watchlist_id, symbol)
-           SELECT $1, s FROM unnest($2::text[]) AS s`,
+           SELECT $1, s FROM unnest($2::text[]) AS s
+           ON CONFLICT (watchlist_id, symbol) DO NOTHING`,
           [req.params.id, unique],
         );
       }
