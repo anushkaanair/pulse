@@ -260,7 +260,7 @@ export default function WatchlistPage() {
           ) : null}
 
           {/* Since You Last Looked */}
-          <section className="mb-4">
+          <section data-tour="attention-deck" className="mb-4">
             <h2 className="text-lg font-medium mb-3 tracking-tight">Most meaningful changes</h2>
             <div className="flex flex-wrap items-center gap-2 mb-4">
               <span className="text-sm font-medium text-[var(--muted)] whitespace-nowrap">
@@ -315,11 +315,11 @@ export default function WatchlistPage() {
 
           {/* Mobile Investments Card (shown only on mobile below attention deck) */}
           <div className="block lg:hidden mb-6">
-            <InvestmentsCard items={changes.items} id={id} />
+            <InvestmentsCard items={changes.items} id={id} dataTour="paper-card" />
           </div>
 
           {/* Full List */}
-          <section>
+          <section data-tour="stock-list">
             <div className="flex items-center gap-4 mb-4 flex-wrap">
                <h2 className="text-xl font-medium tracking-tight">All tracked stocks</h2>
                <div className="hidden sm:flex gap-2">
@@ -346,7 +346,7 @@ export default function WatchlistPage() {
                  <div className="p-8 text-center">
                    <p className="text-sm text-[var(--muted)]">This watchlist is empty. Add a stock to start a baseline.</p>
                    <p className="mt-4 text-xs text-[var(--muted)]">Or start from a preset:</p>
-                   <div className="mt-2.5 flex flex-wrap justify-center gap-2">
+                   <div data-tour="starter-packs" className="mt-2.5 flex flex-wrap justify-center gap-2">
                      {STARTER_PACKS.map((pack) => (
                        <button
                          key={pack.label}
@@ -455,7 +455,7 @@ export default function WatchlistPage() {
             "Tools & Summary" sheet is the natural place a mobile user
             checks for it, and it was invisible from there entirely. A
             second entry point costs nothing; being unreachable did. */}
-        <InvestmentsCard items={changes!.items} id={id} />
+        <InvestmentsCard items={changes!.items} id={id} dataTour="paper-card" />
         <MarketTrends items={changes!.items} />
 
         <Link href={`/w/${id}/history`} data-tour="history-link" className="rounded-2xl border border-[var(--line)] p-5 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] transition-colors flex items-center justify-between" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>

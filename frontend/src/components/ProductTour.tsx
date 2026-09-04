@@ -2,30 +2,58 @@
 
 import type { CSSProperties } from "react";
 import { useEffect, useRef, useState } from "react";
-import { useParams, usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { api } from "@/lib/api";
 
 type Page = "watchlist" | "history" | "paper";
+type ListTarget = "home" | "empty";
 
 interface Step {
   page: Page;
+  list?: ListTarget; // default "home" — only the starter-packs step needs "empty"
   selector: string;
   title: string;
   text: string;
 }
 
-// Cross-page, element-anchored walkthrough. Unlike the old DemoTutorial
-// (unused, commented out in layout.tsx — guessed fixed pixel positions,
-// never actually pointed at a real element), this locates the real DOM
-// node via `[data-tour="..."]`, positions the tooltip next to it, and
-// follows the user across /w/[id] → /history → /paper and back, since
-// "walk them through the history page and the paper trading page" only
-// makes sense if the tour actually goes there.
+// Cross-page, element-anchored, priority-ordered walkthrough. Order mirrors
+// what actually matters: get a watchlist populated first (nothing else has
+// anything to show before that), then the two headline views (Attention
+// Deck, the full list), then the per-stock control, then the two secondary
+// pages (History, Paper trading) — each visited on its own and returned
+// from before the next one starts, never L2-to-L2 directly — and finally
+// the cosmetic theme toggle last.
 const STEPS: Step[] = [
+  {
+    page: "watchlist",
+    list: "empty",
+    selector: '[data-tour="starter-packs"]',
+    title: "Starter watchlist packs",
+    text: "One click gets you a real, live-priced watchlist instantly — Nifty Top 10, Banking, or IT. Nothing else here has anything to show until there's something to track.",
+  },
+  {
+    page: "watchlist",
+    selector: '[data-tour="attention-deck"]',
+    title: "Attention Deck",
+    text: "The ranked \"worth a look\" cards — depth mirrors how much each move actually matters, not just a flat list of everything that moved.",
+  },
+  {
+    page: "watchlist",
+    selector: '[data-tour="stock-list"]',
+    title: "All tracked stocks",
+    text: "Every stock you track, always visible — the deck triages what's meaningful, it never hides the rest.",
+  },
+  {
+    page: "watchlist",
+    selector: '[data-tour="sensitivity"]',
+    title: "Quiet / Normal / Loud",
+    text: "Per-stock sensitivity: Quiet only surfaces a stock's biggest, rarest moves; Loud surfaces smaller moves too, so nothing slips by.",
+  },
   {
     page: "watchlist",
     selector: '[data-tour="history-link"]',
     title: "Visit history",
-    text: "Compare right now against any of your past visits — top/bottom performer, average delta, per-stock % change. Let's take a look.",
+    text: "Compare right now against any of your past visits. Let's take a look.",
   },
   {
     page: "history",
@@ -40,22 +68,22 @@ const STEPS: Step[] = [
     text: "Top performer, bottom performer, and your average watchlist delta since whichever past visit you pick on the left.",
   },
   {
+    page: "watchlist",
+    selector: '[data-tour="paper-card"]',
+    title: "Paper trading",
+    text: "A notional ₹1,000 per tracked stock, priced off real live quotes — never real money. Let's see the detail.",
+  },
+  {
     page: "paper",
     selector: '[data-tour="paper-summary"]',
-    title: "Paper trading",
-    text: "A notional ₹1,000 per tracked stock, priced off real live quotes — current value, 1D return, total return, and how you're doing vs NIFTY. Never real money.",
+    title: "Paper trading, summarized",
+    text: "Current value, 1D return, total return, and how you're doing vs NIFTY.",
   },
   {
     page: "paper",
     selector: '[data-tour="paper-table"]',
     title: "Per-stock breakdown",
-    text: "Same numbers, broken out one row per stock, so you can see exactly which positions are driving the total.",
-  },
-  {
-    page: "watchlist",
-    selector: '[data-tour="sensitivity"]',
-    title: "Quiet / Normal / Loud",
-    text: "Per-stock sensitivity: Quiet only surfaces a stock's biggest, rarest moves; Loud surfaces smaller moves too, so nothing slips by.",
+    text: "Same numbers, one row per stock, so you can see exactly which positions are driving the total.",
   },
   {
     page: "watchlist",
@@ -67,6 +95,8 @@ const STEPS: Step[] = [
 
 const ACTIVE_KEY = "pulse-tour-active";
 const STEP_KEY = "pulse-tour-step";
+const HOME_KEY = "pulse-tour-home-id";
+const EMPTY_KEY = "pulse-tour-empty-id";
 const AUTOSHOWN_KEY = "pulse-tour-autoshown";
 const START_EVENT = "pulse:start-tour";
 
@@ -77,70 +107,133 @@ function pageFor(pathname: string): Page | null {
   return null;
 }
 
+function idFromPath(pathname: string): string | null {
+  const m = pathname.match(/^\/w\/([^/]+)/);
+  return m ? m[1] : null;
+}
+
+function urlFor(page: Page, listId: string): string {
+  return page === "history" ? `/w/${listId}/history` : page === "paper" ? `/w/${listId}/paper` : `/w/${listId}`;
+}
+
+// Find an existing empty watchlist to demo the starter packs on, or create
+// one — rather than assume the account (e.g. the seeded `demo` user, or
+// anyone's own already-populated list) has an empty list sitting around.
+// Reused by name on repeat tours instead of spawning a fresh one each time.
+async function resolveEmptyListId(homeId: string): Promise<string> {
+  const lists = await api.watchlists();
+  const home = lists.find((w) => w.id === homeId);
+  if (home && home.itemCount === 0) return homeId;
+  const existing = lists.find((w) => w.itemCount === 0);
+  if (existing) return existing.id;
+  const created = await api.createWatchlist("Starter packs demo");
+  return created.id;
+}
+
 export function ProductTour() {
   const pathname = usePathname();
   const router = useRouter();
-  const params = useParams<{ id?: string }>();
-  const id = params?.id;
   const page = pageFor(pathname);
+  const currentListId = idFromPath(pathname);
 
   const [active, setActive] = useState(false);
   const [step, setStep] = useState(0);
+  const [homeId, setHomeId] = useState<string | null>(null);
+  const [emptyId, setEmptyId] = useState<string | null>(null);
+  const [resolving, setResolving] = useState(false);
   const [rect, setRect] = useState<DOMRect | null>(null);
   const pollTimer = useRef<number | null>(null);
+  const resolvingRef = useRef(false);
+
+  const beginTour = async (originId: string) => {
+    try { sessionStorage.setItem(ACTIVE_KEY, "1"); sessionStorage.setItem(STEP_KEY, "0"); sessionStorage.setItem(HOME_KEY, originId); sessionStorage.removeItem(EMPTY_KEY); } catch {}
+    setHomeId(originId);
+    setEmptyId(null);
+    setStep(0);
+    setActive(true);
+    if (resolvingRef.current) return;
+    resolvingRef.current = true;
+    setResolving(true);
+    try {
+      const eid = await resolveEmptyListId(originId);
+      try { sessionStorage.setItem(EMPTY_KEY, eid); } catch {}
+      setEmptyId(eid);
+      if (eid !== originId) router.push(urlFor("watchlist", eid));
+    } catch {
+      // Couldn't resolve/create one — fall back to the origin list; the
+      // starter-packs step just degrades gracefully like any other step
+      // whose target isn't present (see the polling below).
+      setEmptyId(originId);
+    } finally {
+      setResolving(false);
+      resolvingRef.current = false;
+    }
+  };
 
   // Restore an in-progress tour on refresh, and listen for the manual
   // "Take the tour" trigger button anywhere in the app.
   useEffect(() => {
     try {
       if (sessionStorage.getItem(ACTIVE_KEY) === "1") {
-        const saved = Number(sessionStorage.getItem(STEP_KEY) ?? "0");
-        setActive(true);
-        setStep(Number.isFinite(saved) ? saved : 0);
+        const savedHome = sessionStorage.getItem(HOME_KEY);
+        if (savedHome) {
+          const saved = Number(sessionStorage.getItem(STEP_KEY) ?? "0");
+          const savedEmpty = sessionStorage.getItem(EMPTY_KEY);
+          setActive(true);
+          setStep(Number.isFinite(saved) ? saved : 0);
+          setHomeId(savedHome);
+          if (savedEmpty) setEmptyId(savedEmpty);
+        }
       }
     } catch { /* private mode etc. */ }
 
     const start = () => {
-      try { sessionStorage.setItem(ACTIVE_KEY, "1"); sessionStorage.setItem(STEP_KEY, "0"); } catch {}
-      setActive(true);
-      setStep(0);
+      const origin = idFromPath(window.location.pathname);
+      if (origin) void beginTour(origin);
     };
     window.addEventListener(START_EVENT, start);
     return () => window.removeEventListener(START_EVENT, start);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // First-ever visit to a watchlist, on this browser, offers the tour once
   // automatically. Never again after that — the top-of-page button covers
   // anyone who wants to replay it.
   useEffect(() => {
-    if (page !== "watchlist" || active) return;
+    if (page !== "watchlist" || active || !currentListId) return;
     try {
       if (localStorage.getItem(AUTOSHOWN_KEY)) return;
       localStorage.setItem(AUTOSHOWN_KEY, "1");
     } catch { return; }
-    const t = window.setTimeout(() => {
-      try { sessionStorage.setItem(ACTIVE_KEY, "1"); sessionStorage.setItem(STEP_KEY, "0"); } catch {}
-      setActive(true);
-      setStep(0);
-    }, 900); // let the page's own content paint first
+    const t = window.setTimeout(() => void beginTour(currentListId), 900); // let the page's own content paint first
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+  }, [page, currentListId]);
 
-  // Locate this step's target element. Polls briefly since right after a
-  // cross-page navigation the target hasn't mounted (or its data hasn't
-  // loaded) yet.
+  const current = active ? STEPS[step] : undefined;
+  const desiredListId = current ? (current.list === "empty" ? emptyId : homeId) : null;
+  const onRightScreen = Boolean(active && current && page === current.page && (!desiredListId || desiredListId === currentListId));
+
+  // Locate this step's target element once we're actually on the right
+  // page AND the right watchlist. Polls briefly since right after a
+  // navigation the target hasn't mounted (or its data hasn't loaded) yet.
+  // Prefers a currently-visible match when the selector exists more than
+  // once (desktop sidebar vs. mobile inline copy of the same card) — an
+  // off-screen/hidden duplicate would otherwise win by being first in the
+  // DOM regardless of what's actually on screen.
   useEffect(() => {
     if (pollTimer.current) window.clearTimeout(pollTimer.current);
-    if (!active || !page) { setRect(null); return; }
-    const current = STEPS[step];
-    if (!current || current.page !== page) { setRect(null); return; }
+    if (!onRightScreen || !current) { setRect(null); return; }
 
     let cancelled = false;
     let tries = 0;
+    const pick = (selector: string) => {
+      const els = Array.from(document.querySelectorAll<HTMLElement>(selector));
+      return els.find((el) => el.offsetParent !== null) ?? els[0] ?? null;
+    };
     const find = () => {
       if (cancelled) return;
-      const el = document.querySelector(current.selector);
+      const el = pick(current.selector);
       if (el) {
         setRect(el.getBoundingClientRect());
         el.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -154,7 +247,7 @@ export function ProductTour() {
     find();
 
     const onReflow = () => {
-      const el = document.querySelector(current.selector);
+      const el = pick(current.selector);
       if (el) setRect(el.getBoundingClientRect());
     };
     window.addEventListener("scroll", onReflow, true);
@@ -165,29 +258,38 @@ export function ProductTour() {
       window.removeEventListener("scroll", onReflow, true);
       window.removeEventListener("resize", onReflow);
     };
-  }, [active, page, step]);
+  }, [onRightScreen, current]);
 
   const end = () => {
     setActive(false);
     setRect(null);
-    try { sessionStorage.removeItem(ACTIVE_KEY); sessionStorage.removeItem(STEP_KEY); } catch {}
+    try { [ACTIVE_KEY, STEP_KEY, HOME_KEY, EMPTY_KEY].forEach((k) => sessionStorage.removeItem(k)); } catch {}
   };
 
   const goTo = (next: number) => {
     if (next < 0) return;
     if (next >= STEPS.length) { end(); return; }
     const target = STEPS[next];
+    const targetListId = target.list === "empty" ? emptyId : homeId;
     try { sessionStorage.setItem(STEP_KEY, String(next)); } catch {}
     setStep(next);
-    if (target.page !== page && id) {
-      const url = target.page === "history" ? `/w/${id}/history` : target.page === "paper" ? `/w/${id}/paper` : `/w/${id}`;
-      router.push(url);
-    }
+    if (!targetListId) return; // still resolving the empty list; render holds on the loading state below
+    if (target.page !== page || targetListId !== currentListId) router.push(urlFor(target.page, targetListId));
   };
 
   if (!active || !page) return null;
-  const current = STEPS[step];
-  if (!current || current.page !== page) return null; // mid cross-page transition
+
+  if (resolving) {
+    return (
+      <div className="fixed z-[60] w-[min(320px,calc(100vw-32px))]" style={{ top: "50%", left: "50%", transform: "translate(-50%,-50%)" }}>
+        <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] shadow-[0_12px_40px_rgb(0,0,0,0.25)] p-4">
+          <p className="m-0 text-[13px] text-[var(--muted)]">Setting up a blank watchlist to show the starter packs…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!current || !onRightScreen) return null; // mid cross-page/cross-list transition
 
   return (
     <>

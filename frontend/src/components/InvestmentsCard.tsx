@@ -14,7 +14,7 @@ import { api, type ChangeItem, type Quote } from "@/lib/api";
 // commitment as the rest of the app, just applied to a demo holdings view.
 const PER_SYMBOL = 1000;
 
-export function InvestmentsCard({ items, id }: { items: ChangeItem[]; id: string }) {
+export function InvestmentsCard({ items, id, dataTour }: { items: ChangeItem[]; id: string; dataTour?: string }) {
   const [nifty, setNifty] = useState<Quote | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -57,6 +57,7 @@ export function InvestmentsCard({ items, id }: { items: ChangeItem[]; id: string
     // per-symbol paper-trading breakdown at /w/[id]/paper.
     <Link
       href={`/w/${id}/paper`}
+      data-tour={dataTour}
       className="group block rounded-2xl border border-dashed border-[var(--amber)]/40 p-5 transition-colors hover:border-[var(--amber)]/70"
       style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}
     >
