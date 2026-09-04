@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
-import { api, ApiRequestError, switchUser, type WatchlistSummary } from "@/lib/api";
+import { useRouter, useSearchParams } from "next/navigation";
+import { FormEvent, Suspense, useEffect, useState } from "react";
+import { api, ApiRequestError, setUserId, switchUser, type WatchlistSummary } from "@/lib/api";
 
 function ErrorText({ error }: { error: unknown }) {
   if (!error) return null;
@@ -17,6 +18,19 @@ const EXPLAINERS: [string, string, string][] = [
 ];
 
 export default function WatchlistsPage() {
+  // useSearchParams needs a Suspense boundary at the page level (Next.js
+  // build requirement — this page is entirely client-rendered anyway, so
+  // the fallback below is never actually visible in practice).
+  return (
+    <Suspense fallback={null}>
+      <WatchlistsPageInner />
+    </Suspense>
+  );
+}
+
+function WatchlistsPageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [lists, setLists] = useState<WatchlistSummary[]>([]);
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(true);
@@ -29,7 +43,17 @@ export default function WatchlistsPage() {
     catch (cause) { setError(cause); }
     finally { setLoading(false); }
   };
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    // ?as=<id> impersonates a known user id — a one-click way to open a
+    // seeded demo/reviewer account, instead of hand-editing localStorage
+    // via devtools (Chrome's paste guard makes that needlessly fiddly for
+    // what should be a one-line dev convenience). Strips the param from
+    // the URL immediately so it isn't accidentally re-applied or shared.
+    const as = searchParams.get("as");
+    if (as) { setUserId(as); router.replace("/"); }
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

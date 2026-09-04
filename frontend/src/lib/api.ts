@@ -77,6 +77,14 @@ export function switchUser() {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(USER_KEY, crypto.randomUUID());
 }
+// Impersonate a specific, known user id — used by the ?as=<id> link on the
+// index page so a demo/reviewer account can be opened with one click
+// instead of hand-editing localStorage via devtools (which Chrome's own
+// paste guard makes needlessly fiddly for a one-line dev convenience).
+export function setUserId(id: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(USER_KEY, id);
+}
 
 async function request<T>(path: string, init: RequestInit = {}, etag?: string): Promise<{ data: T | null; etag: string | null; status: number }> {
   const headers = new Headers(init.headers);
