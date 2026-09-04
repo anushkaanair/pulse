@@ -52,3 +52,8 @@ why this one.
 **What:** The away-aware `n` (ticks since checkpoint) is capped at ~30 days of ticks, not `HISTORY_WINDOW`.
 **Alternatives:** Cap `n` at `HISTORY_WINDOW` (the original code, and the original spec in IMPLEMENTATION_PLAN.md).
 **Why:** Caught by the engine's own unit tests: `HISTORY_WINDOW` defaults to 50 ticks (~50s at the default tick rate), which is how much price history estimates σ from — not how long a user can be away. Reusing it as the elapsed-time cap silently disabled away-aware scaling for anyone gone more than a minute, defeating the feature for the multi-day-absence case it exists to handle. This is why the torture test and unit tests run before the demo, not just for show.
+
+## Day-high/low breach must clear a significance bar, not just be non-zero
+**What:** DAY_HIGH_BREACHED/DAY_LOW_BREACHED only fire when the breach magnitude clears the same z-score (or absolute-%) bar used for price moves — not on any strictly-greater comparison.
+**Alternatives:** Fire on any new high/low, however small (the original code).
+**Why:** Found live: seconds after promoting a checkpoint, a normally-drifting stock (+0.13%, 1.3σ) still showed as "meaningful" because it trivially set a new intraday high. Any upward-drifting stock sets a "new high" on nearly every tick — this broke the core promise that "nothing meaningful changed" actually means that, and violated the torture test's own checkpoint-exactness invariant (§10, assertion 7). Caught by running the real flow against the live server, not just unit tests against synthetic data — worth noting for the pitch.

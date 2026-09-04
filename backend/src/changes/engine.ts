@@ -144,9 +144,27 @@ function changeFor(
     isMove = Math.abs(pct) >= cfg.absThresholdPct * mult;
   }
 
+  // A breach only counts if it's significant by the SAME bar as a price
+  // move — not merely non-zero. Without this, a stock drifting upward sets
+  // a "new high" on almost every tick (trivially true whenever price rises
+  // while already near the day's peak), spamming false "meaningful"
+  // changes and breaking the core promise that "nothing changed" actually
+  // means nothing changed. Bug found by testing checkpoint immediately
+  // followed by /changes — see DECISIONS.md.
+  const isSignificant = (deltaPct: number) => {
+    if (st?.sigma && st.sigma > 0) return Math.abs(deltaPct) / (st.sigma * Math.sqrt(n)) >= cfg.zThreshold * mult;
+    return Math.abs(deltaPct) >= cfg.absThresholdPct * mult;
+  };
+
   const events: ChangeEvent[] = [];
-  if (q.dayHigh && seen.dayHigh && Number(q.dayHigh) > Number(seen.dayHigh)) events.push("DAY_HIGH_BREACHED");
-  if (q.dayLow && seen.dayLow && Number(q.dayLow) < Number(seen.dayLow)) events.push("DAY_LOW_BREACHED");
+  if (q.dayHigh && seen.dayHigh && Number(q.dayHigh) > Number(seen.dayHigh)) {
+    const breachPct = (Number(q.dayHigh) - Number(seen.dayHigh)) / Number(seen.dayHigh);
+    if (isSignificant(breachPct)) events.push("DAY_HIGH_BREACHED");
+  }
+  if (q.dayLow && seen.dayLow && Number(q.dayLow) < Number(seen.dayLow)) {
+    const breachPct = (Number(seen.dayLow) - Number(q.dayLow)) / Number(seen.dayLow);
+    if (isSignificant(breachPct)) events.push("DAY_LOW_BREACHED");
+  }
   if (st && st.meanVolumePerTick > 0) {
     const perTick = (q.volume - seen.volume) / n;
     if (perTick > st.meanVolumePerTick * cfg.volumeSpikeMultiple) events.push("VOLUME_SPIKE");

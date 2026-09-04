@@ -80,6 +80,23 @@ describe("computeChanges", () => {
     expect(normalSmall.change.kind).toBe("none");
   });
 
+  it("a trivial new high (drift, not a breakout) is NOT a meaningful event — regression for the checkpoint-then-immediate-poll bug", () => {
+    // Same scenario that broke in the real server: fresh checkpoint at 100
+    // with dayHigh 100, next tick nudges price+dayHigh to 100.13 (+0.13%,
+    // 1.3σ at sigma=0.001) — below the 2σ move bar AND too small a breach
+    // to count as a real "new high" event.
+    const st = stats("S", 0.001);
+    const [r] = computeChanges({ S: seen(100, { dayHigh: "100.0000" }) }, 1_000, [item("S", 100.13, { dayHigh: "100.13" })], st, cfg);
+    expect(r.change.kind).toBe("none");
+    expect(r.change.events).not.toContain("DAY_HIGH_BREACHED");
+  });
+
+  it("a genuine breakout above the old high IS a meaningful event", () => {
+    const st = stats("S", 0.001);
+    const [r] = computeChanges({ S: seen(100, { dayHigh: "100.0000" }) }, 1_000, [item("S", 100.5, { dayHigh: "100.5" })], st, cfg);
+    expect(r.change.events).toContain("DAY_HIGH_BREACHED");
+  });
+
   it("events fire independently of the move and are ranked above 'none'", () => {
     const snap = { E: seen(100, { dayHigh: "101.0000" }), N: seen(100) };
     const st = new Map([...stats("E", 0.01, 10), ...stats("N", 0.01, 10)]);
