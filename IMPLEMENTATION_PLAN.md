@@ -169,7 +169,13 @@ missing). All money as strings of decimals (`"1523.4500"`), never floats.
 ```
 GET  /health
   200 { status:"ok"|"degraded", db:"connected"|"unreachable",
-        feed:{ status:"live"|"stale"|"down", lastTickAt:iso|null, lagSeconds:number|null } }
+        feed:{ status:"live"|"stale"|"down", lastTickAt:iso|null, lagSeconds:number|null },
+        ingest:{ received, applied, ignored, historyInserted, errors } }
+        -- ingest was added after this section was first written (operator/
+        -- debugging visibility into the ingestor, not part of the frontend
+        -- contract). Frontend only needs status/db/feed. Caught as a real
+        -- doc/code drift by Codex integration-testing against the live
+        -- backend, not a frontend bug — logged in DECISIONS.md.
 
 GET  /api/symbols?q=TCS
   200 [ { symbol, name, exchange } ]
