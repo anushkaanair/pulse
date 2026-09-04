@@ -71,17 +71,16 @@ function WatchlistsPageInner() {
       <header className="rise flex flex-wrap items-start justify-between gap-6">
         <div>
           <p className="m-0 text-[10.5px] uppercase tracking-[.18em]" style={{ color: "var(--amber)" }}>Market watchlist</p>
-          <h1 className="mt-2 text-[30px] font-semibold tracking-tight">What deserves attention</h1>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight">What deserves attention</h1>
           <p className="mt-2.5 max-w-[560px] text-sm leading-relaxed text-[var(--ink-2)]">
             Not another price table. We remember exactly what you saw last time, then weigh every move against that stock&apos;s own normal swings and its sector&apos;s — so a quiet stock twitching gets flagged, and a volatile one doing the same doesn&apos;t.
           </p>
         </div>
-        <div className="flex items-center gap-5">
+        <div className="flex items-center gap-4 pt-1">
           {lists.length > 0 ? (
-            <div className="flex gap-5">
-              <Stat value={lists.length} label={lists.length === 1 ? "watchlist" : "watchlists"} />
-              <Stat value={totalTracked} label="symbols" />
-            </div>
+            <span className="text-xs text-[var(--muted)]">
+              <span className="numbers font-semibold text-[var(--ink)]">{lists.length}</span> {lists.length === 1 ? "list" : "lists"} · <span className="numbers font-semibold text-[var(--ink)]">{totalTracked}</span> symbols
+            </span>
           ) : null}
           <button onClick={() => { switchUser(); void load(); }} className="text-xs text-[var(--muted)] underline underline-offset-4 hover:text-[var(--ink)]">Switch user</button>
         </div>
@@ -167,14 +166,5 @@ function WatchlistsPageInner() {
         </aside>
       </section>
     </main>
-  );
-}
-
-function Stat({ value, label }: { value: number; label: string }) {
-  return (
-    <div className="text-right">
-      <p className="numbers m-0 text-xl font-semibold leading-none tracking-tight">{value}</p>
-      <p className="mt-1 mb-0 text-[10.5px] uppercase tracking-wide text-[var(--muted)]">{label}</p>
-    </div>
   );
 }

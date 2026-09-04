@@ -129,7 +129,7 @@ export default function WatchlistPage() {
           ) : null}
 
           {/* Since You Last Looked */}
-          <section className="mb-10">
+          <section className="mb-6">
             <h2 className="text-xl font-medium mb-1 tracking-tight">Most meaningful changes</h2>
             <p className="text-sm text-[var(--muted)] mb-6">{changes.digest}</p>
             {changes.summary.meaningful === 0 ? (
@@ -148,7 +148,7 @@ export default function WatchlistPage() {
                <h2 className="text-xl font-medium tracking-tight">All tracked stocks</h2>
                <div className="hidden sm:flex gap-2">
                  {(["symbol", "price", "change", "volume"] as const).map((k) => (
-                   <button key={k} onClick={() => toggleSort(k)} className="rounded-full border px-3.5 py-1 text-xs font-medium transition-colors" style={sort.key === k ? { borderColor: "var(--amber)", color: "var(--amber)", background: "rgba(240,180,41,.1)" } : { borderColor: "var(--line)", color: "var(--muted)" }}>{k.charAt(0).toUpperCase() + k.slice(1)}{arrow(k)}</button>
+                   <button key={k} onClick={() => toggleSort(k)} className="rounded-full border px-3.5 py-1 text-xs font-medium transition-colors" style={sort.key === k ? { borderColor: "var(--amber)", color: "var(--amber)", background: "rgba(0,190,140,.1)" } : { borderColor: "var(--line)", color: "var(--muted)" }}>{k.charAt(0).toUpperCase() + k.slice(1)}{arrow(k)}</button>
                  ))}
                </div>
                <div className="ml-auto w-56">

@@ -44,11 +44,11 @@ export function WatchlistRow({
       ref={innerRef}
       style={style}
       data-index={dataIndex}
-      className={`grid grid-cols-[1fr_auto] gap-x-4 gap-y-3 py-3.5 md:flex md:items-center md:gap-x-4 md:gap-y-0 hover:bg-[var(--surface-3)] transition-colors rounded-lg md:rounded-none px-2 md:px-0 list-none${className ? ` ${className}` : ""}`}
+      className={`grid grid-cols-[1fr_auto] gap-x-4 gap-y-3 py-2.5 md:flex md:items-center md:gap-x-4 md:gap-y-0 hover:bg-[var(--surface-3)] transition-colors rounded-lg md:rounded-none px-2 md:px-0 list-none${className ? ` ${className}` : ""}`}
     >
       {/* 1. Symbol & Name */}
       <div className="flex items-center gap-3 md:min-w-28 md:flex-1">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center text-[13px] font-semibold text-[var(--ink-2)] border border-[var(--line-2)] hidden md:flex flex-shrink-0" style={{ background: "linear-gradient(145deg, var(--surface-3), var(--surface))" }}>
+        <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[13px] font-semibold text-[var(--ink-2)] border border-[var(--line-2)] hidden md:flex flex-shrink-0" style={{ background: "linear-gradient(145deg, var(--surface-3), var(--surface))" }}>
           {item.symbol[0]}
         </div>
         <div className="flex flex-col min-w-0">

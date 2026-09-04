@@ -20,7 +20,7 @@ function layoutFor(containerWidth: number) {
     const cardW = Math.max(200, Math.min(280, containerWidth - 48));
     return { cardW, stepX: cardW * 0.34, stepZ: 70, anchor: "50%", stageH: 400, cardTop: -150 };
   }
-  return { cardW: 300, stepX: 150, stepZ: 110, anchor: "30%", stageH: 322, cardTop: -122 };
+  return { cardW: 300, stepX: 132, stepZ: 108, anchor: "42%", stageH: 372, cardTop: -140 };
 }
 
 // The ranked "what deserves your attention" list, rendered as glass panes
@@ -117,10 +117,10 @@ export function AttentionDeck({
       className="relative select-none overflow-hidden rounded-2xl border border-[var(--line)] outline-none transition-[height] duration-500"
       style={{
         height: expanded ? layout.stageH + 186 : layout.stageH, perspective: 1500, perspectiveOrigin: "50% 42%",
-        background: "radial-gradient(120% 90% at 22% 0%, rgba(240,180,41,.09), transparent 58%), linear-gradient(175deg, var(--surface-2), var(--ground-2))",
+        background: "radial-gradient(120% 90% at 22% 0%, rgba(0,190,140,.09), transparent 58%), linear-gradient(175deg, var(--surface-2), var(--ground-2))",
       }}
     >
-      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-28" style={{ background: "linear-gradient(to top, rgba(8,9,12,.92), transparent)" }} />
+      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-28" style={{ background: "linear-gradient(to top, color-mix(in srgb, var(--surface-2) 94%, transparent), transparent)" }} />
 
       <p className="absolute left-5 top-4 z-20 m-0 text-[10.5px] uppercase tracking-[.15em] text-[var(--muted)]">
         {items.length} worth a look — closest deserves attention
@@ -171,16 +171,16 @@ export function AttentionDeck({
                 pointerEvents: behind > 3 ? "none" : "auto",
                 transformStyle: "preserve-3d", transform,
                 transition: "transform .56s cubic-bezier(.2,.8,.2,1), opacity .42s ease",
-                background: `linear-gradient(150deg, rgba(240,180,41,${rim}), var(--line-2) 45%, var(--line) 100%)`,
+                background: `linear-gradient(150deg, rgba(0,190,140,${rim}), var(--line-2) 45%, var(--line) 100%)`,
                 boxShadow: isFront
-                  ? `0 42px 70px -28px rgba(0,0,0,.92), 0 0 60px -18px rgba(240,180,41,${rim * 0.85})`
+                  ? `0 42px 70px -28px rgba(0,0,0,.92), 0 0 60px -18px rgba(0,190,140,${rim * 0.85})`
                   : "0 30px 54px -30px rgba(0,0,0,.85)",
                 filter: isFront ? "none" : `saturate(${1 - behind * 0.18}) blur(${behind * 0.6}px)`,
               }}
             >
               <div className="relative overflow-hidden rounded-[15px] p-5" style={{ minHeight: 244, background: "linear-gradient(168deg, var(--surface-2), var(--surface))" }}>
                 <span aria-hidden="true" className="pointer-events-none absolute inset-0" style={{ background: "linear-gradient(135deg, rgba(255,255,255,.055), transparent 42%)" }} />
-                <span aria-hidden="true" className="pointer-events-none absolute -right-10 -top-12 h-32 w-32 rounded-full" style={{ filter: "blur(28px)", background: `rgba(240,180,41,${(16 + magnitude * 32) / 100})` }} />
+                <span aria-hidden="true" className="pointer-events-none absolute -right-10 -top-12 h-32 w-32 rounded-full" style={{ filter: "blur(28px)", background: `rgba(0,190,140,${(16 + magnitude * 32) / 100})` }} />
 
                 <div className="relative">
                   <div className="flex items-start justify-between mb-3.5">
@@ -216,9 +216,9 @@ export function AttentionDeck({
                           ? { color: "var(--muted)", background: "var(--surface-3)" }
                           : { color: positive ? "var(--green)" : "var(--red)", background: positive ? "rgba(46,204,143,.13)" : "rgba(255,107,91,.13)" }}
                       >
-                        {zScore === null ? "New" : `${positive ? "▲" : "▼"} ${Math.abs(zScore).toFixed(1)}σ`}
+                        {zScore === null ? "New" : `${positive ? "▲" : "▼"} ${Math.abs(zScore) > 9 ? ">9" : Math.abs(zScore).toFixed(1)}σ`}
                       </span>
-                      {rawDiffers ? <span className="numbers text-[9.5px] text-[var(--muted)]" title="Raw z-score, before subtracting what the sector did">{Math.abs(zRaw!).toFixed(1)}σ raw</span> : null}
+                      {rawDiffers ? <span className="numbers text-[9.5px] text-[var(--muted)]" title="Raw z-score, before subtracting what the sector did">{Math.abs(zRaw!) > 9 ? ">9" : Math.abs(zRaw!).toFixed(1)}σ raw</span> : null}
                       {sectorAdjusted ? <span className="rounded-full border border-[var(--line-2)] px-1.5 py-0.5 text-[9.5px] text-[var(--muted)]" title="Adjusted for what the sector/index did over the same window">sector-adj</span> : null}
                       {item.change.events.slice(0, 1).map((ev) => (
                         <span key={ev} className="rounded-full border border-[var(--line-2)] px-1.5 py-0.5 text-[9.5px] text-[var(--muted)]">{EVENT_LABELS[ev]}</span>
