@@ -18,13 +18,15 @@ export interface IngestStats {
 
 const UPSERT_QUOTE = `
   INSERT INTO quotes
-    (symbol, price, prev_close, day_high, day_low, volume, as_of, received_at, seq, corrected, source)
-  VALUES ($1, $2, $3, $4, $5, $6, $7, now(), $8, $9, $10)
+    (symbol, price, prev_close, day_high, day_low, week_high, week_low, volume, as_of, received_at, seq, corrected, source)
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10, $11, $12)
   ON CONFLICT (symbol) DO UPDATE SET
     price = EXCLUDED.price,
     prev_close = EXCLUDED.prev_close,
     day_high = EXCLUDED.day_high,
     day_low = EXCLUDED.day_low,
+    week_high = EXCLUDED.week_high,
+    week_low = EXCLUDED.week_low,
     volume = EXCLUDED.volume,
     as_of = EXCLUDED.as_of,
     received_at = now(),
@@ -96,7 +98,7 @@ export class Ingestor {
     this.stats.received++;
     try {
       const res = await this.pool.query(UPSERT_QUOTE, [
-        t.symbol, t.price, t.prevClose, t.dayHigh, t.dayLow, t.volume,
+        t.symbol, t.price, t.prevClose, t.dayHigh, t.dayLow, t.weekHigh, t.weekLow, t.volume,
         t.asOf, t.seq, t.corrected, t.source,
       ]);
       if (res.rowCount === 1) this.stats.applied++;

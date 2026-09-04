@@ -11,6 +11,8 @@ export interface QuoteRow {
   prev_close: string | null;
   day_high: string | null;
   day_low: string | null;
+  week_high: string | null;
+  week_low: string | null;
   volume: string;
   as_of: Date;
   received_at: Date;
@@ -24,6 +26,8 @@ export interface Quote {
   prevClose: string | null;
   dayHigh: string | null;
   dayLow: string | null;
+  weekHigh: string | null;
+  weekLow: string | null;
   volume: number;
   asOf: string;
   receivedAt: string;
@@ -41,6 +45,8 @@ export function formatQuote(row: QuoteRow, now = new Date()): Quote {
     prevClose: row.prev_close === null ? null : fixed4(row.prev_close),
     dayHigh: row.day_high === null ? null : fixed4(row.day_high),
     dayLow: row.day_low === null ? null : fixed4(row.day_low),
+    weekHigh: row.week_high == null ? null : fixed4(row.week_high),
+    weekLow: row.week_low == null ? null : fixed4(row.week_low),
     volume: Number(row.volume),
     asOf: new Date(row.as_of).toISOString(),
     receivedAt: new Date(row.received_at).toISOString(),
@@ -66,7 +72,7 @@ export function quotesRouter(pool: Pool) {
       const { symbols } = Query.parse(req.query);
       if (symbols.length === 0) return res.json([]);
       const { rows } = await pool.query<QuoteRow>(
-        `SELECT symbol, price, prev_close, day_high, day_low, volume, as_of, received_at, corrected, source
+        `SELECT symbol, price, prev_close, day_high, day_low, week_high, week_low, volume, as_of, received_at, corrected, source
            FROM quotes WHERE symbol = ANY($1) ORDER BY symbol`,
         [symbols.slice(0, 500)],
       );

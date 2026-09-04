@@ -21,7 +21,7 @@ async function loadWatchlist(db: Pool | PoolClient, userId: string, id: string) 
   if (wl.rowCount === 0) throw new AppError(404, "NOT_FOUND", "Watchlist not found");
   const items = await db.query<QuoteRow & { name: string; sensitivity: string }>(
     `SELECT wi.symbol, wi.sensitivity, s.name,
-            q.price, q.prev_close, q.day_high, q.day_low, q.volume,
+            q.price, q.prev_close, q.day_high, q.day_low, q.week_high, q.week_low, q.volume,
             q.as_of, q.received_at, q.corrected, q.source
        FROM watchlist_items wi
        JOIN symbols s ON s.symbol = wi.symbol

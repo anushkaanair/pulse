@@ -28,7 +28,7 @@ export function changesRouter(pool: Pool, ingestor: Ingestor) {
 
       const items = await pool.query<ItemRow>(
         `SELECT wi.symbol, wi.sensitivity, s.name,
-                q.price, q.prev_close, q.day_high, q.day_low, q.volume,
+                q.price, q.prev_close, q.day_high, q.day_low, q.week_high, q.week_low, q.volume,
                 q.as_of, q.received_at, q.corrected, q.source
            FROM watchlist_items wi
            JOIN symbols s ON s.symbol = wi.symbol
@@ -120,16 +120,33 @@ export function changesRouter(pool: Pool, ingestor: Ingestor) {
 
 async function mintSnapshot(pool: Pool, userId: string, watchlistId: string, payload: SnapshotPayload): Promise<string> {
   const json = JSON.stringify(payload);
-  const latest = await pool.query<{ id: string; same: boolean }>(
-    `SELECT id, (payload = $3::jsonb) AS same FROM snapshots
+  const hash = createHash("sha1").update(json).digest("hex");
+  // Scaling fix: dedupe on a 40-byte hash, not a full 18KB jsonb equality
+  // scan. Under concurrent polling most requests in the same tick window
+  // see an identical latest snapshot and skip the write entirely — the
+  // 500-symbol/50-user write storm that scale-check.ts found collapses to
+  // one write per actual data change instead of one per request.
+  const latest = await pool.query<{ id: string; payload_hash: string | null }>(
+    `SELECT id, payload_hash FROM snapshots
       WHERE user_id = $1 AND watchlist_id = $2 ORDER BY taken_at DESC LIMIT 1`,
-    [userId, watchlistId, json],
+    [userId, watchlistId],
   );
-  if (latest.rows[0]?.same) return latest.rows[0].id;
+  if (latest.rows[0]?.payload_hash === hash) return latest.rows[0].id;
   const ins = await pool.query<{ id: string }>(
-    "INSERT INTO snapshots (user_id, watchlist_id, payload) VALUES ($1, $2, $3::jsonb) RETURNING id",
-    [userId, watchlistId, json],
+    "INSERT INTO snapshots (user_id, watchlist_id, payload, payload_hash) VALUES ($1, $2, $3::jsonb, $4) RETURNING id",
+    [userId, watchlistId, json, hash],
   );
+  // Bounded retention (#2 gap): keep the newest 50 unpromoted snapshots per
+  // list; anything older and not referenced by a checkpoint is disposable.
+  await pool.query(
+    `DELETE FROM snapshots s WHERE s.user_id = $1 AND s.watchlist_id = $2
+       AND NOT EXISTS (SELECT 1 FROM checkpoints c WHERE c.snapshot_id = s.id)
+       AND NOT EXISTS (SELECT 1 FROM checkpoint_history h WHERE h.snapshot_id = s.id)
+       AND s.id NOT IN (
+         SELECT id FROM snapshots WHERE user_id = $1 AND watchlist_id = $2 ORDER BY taken_at DESC LIMIT 50
+       )`,
+    [userId, watchlistId],
+  ).catch(() => {});
   return ins.rows[0].id;
 }
 

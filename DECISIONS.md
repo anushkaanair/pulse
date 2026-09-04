@@ -87,3 +87,12 @@ why this one.
 **What:** Promoting the same snapshotId twice in a row doesn't create two timeline entries.
 **Alternatives:** Log every promotion unconditionally.
 **Why:** A double-click or a retried request shouldn't manufacture a fake "second visit" a few milliseconds after the first — same idempotency principle applied elsewhere in this codebase (item add/remove).
+
+## Scaling fix: stats TTL cache + hash-based snapshot dedupe
+**What:** loadStats caches trailing-σ per symbol for 5s; mintSnapshot dedupes on a sha1 hash (not full jsonb compare) and prunes to the newest 50 unpromoted snapshots per list.
+**Alternatives:** Recompute σ per request; compare full 18KB jsonb; never prune.
+**Why:** scale-check.ts showed 50 concurrent 500-symbol /changes at ~2.6s p50, bottlenecked on the per-request σ window-function scan. σ is slow-moving, so a 5s cache is indistinguishable from fresh for ranking and collapses N concurrent identical scans to one → p50 dropped to ~280ms (~9×). Hashing + pruning also fix the unbounded quote/snapshot growth flagged for "think long-term".
+
+## 52-week range + volume surfaced in the row
+**What:** quotes now carry week_high/week_low (tracked by the ingestor like day high/low but never reset); the row shows volume and a 52W low–high position bar.
+**Why:** Groww's own watchlist shows both — real at-a-glance signal, on-thesis, not feature-count padding. Values are real (ingestor-tracked), not faked at read time.

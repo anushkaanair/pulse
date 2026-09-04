@@ -49,6 +49,8 @@ function tick(symbol: string, overrides: Partial<Tick> = {}): Tick {
     prevClose: 99,
     dayHigh: 101,
     dayLow: 99,
+    weekHigh: 120,
+    weekLow: 80,
     volume: 1000,
     asOf: new Date("2026-09-04T10:00:00.000Z"),
     seq: 1,

@@ -29,6 +29,8 @@ interface SymbolState {
   prevClose: number;
   dayHigh: number;
   dayLow: number;
+  weekHigh: number;
+  weekLow: number;
   volume: number;
   sigmaPerTick: number;   // return stdev per tick
   meanVolumePerTick: number;
@@ -118,6 +120,9 @@ export class SimulatedProvider implements MarketDataProvider {
       prevClose: basePrice,
       dayHigh: basePrice,
       dayLow: basePrice,
+      // Stable 52w band around the base; expands if price later breaks it.
+      weekHigh: round4(basePrice * (1.05 + rand() * 0.35)),
+      weekLow: round4(basePrice * (0.6 + rand() * 0.3)),
       volume: 0,
       sigmaPerTick: sigmaDaily / Math.sqrt(ticksPerDay),
       meanVolumePerTick: 500 + Math.floor(rand() * 5000),
@@ -136,6 +141,8 @@ export class SimulatedProvider implements MarketDataProvider {
     s.price = Math.max(1, s.price * (1 + r));
     s.dayHigh = Math.max(s.dayHigh, s.price);
     s.dayLow = Math.min(s.dayLow, s.price);
+    s.weekHigh = Math.max(s.weekHigh, s.price);
+    s.weekLow = Math.min(s.weekLow, s.price);
     const volSpike = s.rand() < 0.01 ? 4 : 1;
     const v = Math.floor(s.meanVolumePerTick * (0.5 + s.rand()) * volSpike);
     s.volume += v;
@@ -147,6 +154,8 @@ export class SimulatedProvider implements MarketDataProvider {
       prevClose: round4(s.prevClose),
       dayHigh: round4(s.dayHigh),
       dayLow: round4(s.dayLow),
+      weekHigh: round4(s.weekHigh),
+      weekLow: round4(s.weekLow),
       volume: s.volume,
       asOf: new Date(s.lastAsOf),
       seq: ++this.seq,

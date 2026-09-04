@@ -8,6 +8,8 @@ export interface Tick {
   prevClose: number;
   dayHigh: number;
   dayLow: number;
+  weekHigh: number;  // 52-week band
+  weekLow: number;
   volume: number;
   asOf: Date;        // exchange time — the ONLY time used for ordering
   seq: number;       // provider sequence; higher seq at the same asOf wins
