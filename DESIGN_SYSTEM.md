@@ -127,6 +127,40 @@ Factual, first-person-plural-free, no exclamation points, no "🎉". The
 match it everywhere: empty states, error states, tooltips. This product's
 personality is "a colleague who checked so you don't have to," not a chatbot.
 
+## New: sparkline (per-symbol trend)
+
+A tiny inline trend line, not a chart. Lives in the full list row, between
+the price and the stale badge. ~48×20px SVG, one `<path>`, no axes, no grid,
+no labels, no tooltip on hover (keep it glanceable, not interactive) — the
+distinction from a "historical chart" (explicitly out of scope) is exactly
+this restraint. Stroke color: signal green/red matching the row's own
+`pctSincePrev` direction, at 70% opacity so it recedes behind the number.
+1.5px stroke, no fill. If fewer than 2 points exist yet, render nothing
+(not a placeholder shape) — an empty state here should be silence, not a
+flat line implying "no movement."
+
+## New: visit timeline
+
+A separate view, not crammed into the main screen — reachable via a small
+"History" link near the watchlist title (12px, muted, same treatment as
+other secondary nav). Layout:
+
+- A **vertical list of past visits**, newest first, each showing just the
+  relative time ("2 hours ago", "Tuesday 9:15 AM") — clicking one loads its
+  diff below/beside it. This list is the *quiet* zone (Zone-2-style
+  density), not the loud one.
+- The **selected diff** is the focus: same `ChangeCard`-adjacent visual
+  language as the main screen (tabular numbers, before→after price, %,
+  sorted by magnitude) but explicitly NOT using the amber "meaningful"
+  accent or z-score badges — this view is a plain comparison, not a
+  significance judgment (see DECISIONS.md on why the diff math differs). Use
+  plain green/red for direction only, no amber border, no "why" sentence —
+  the honesty of *not* implying statistical meaning here matters as much as
+  the honesty of implying it elsewhere.
+- `status: "added"` rows get a small "+ added" tag instead of a price-before
+  column; `"removed"` rows get "− removed" and gray out the price-after
+  column. Never show a fabricated before/after for either.
+
 ## What "visually great" means here, concretely
 
 A judge should be able to look at the screen for three seconds and correctly
