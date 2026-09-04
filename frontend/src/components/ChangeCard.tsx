@@ -19,9 +19,9 @@ export function ChangeCard({ item }: { item: ChangeItem }) {
         <p className="text-sm text-[var(--ink-dark)] mb-5 leading-relaxed line-clamp-3 flex-1" title={item.change.why}>{item.change.why}</p>
         
         <div className="mt-auto">
-          <div className="numbers text-[16px] font-medium text-[var(--ink-dark)]">₹{item.quote.price.toFixed(2)}</div>
+          <div className="numbers text-[16px] font-medium text-[var(--ink-dark)]">₹{Number(item.quote.price).toFixed(2)}</div>
           <div className="flex flex-wrap gap-2 items-center mt-1.5">
-            <span className={`numbers text-xs font-medium ${item.change.zScore === null ? "text-[var(--muted)]" : isPositive ? "text-[var(--groww)]" : "text-[var(--red)]"}`}>
+            <span className={`numbers text-xs font-medium ${item.change.zScore === null ? "text-[var(--muted)]" : isPositive ? "text-[var(--accent)]" : "text-[var(--red)]"}`}>
               {item.change.zScore === null ? "New" : `${isPositive ? "+" : ""}${item.change.zScore.toFixed(1)}σ`}
             </span>
             {item.change.events.map((event) => <span key={event} className="text-[10px] text-[var(--muted)] bg-[var(--ground)] px-1.5 py-0.5 rounded">{eventLabels[event]}</span>)}

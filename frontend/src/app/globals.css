@@ -7,9 +7,10 @@
   --ink-dark: #14171a;
   --muted: #7c7e8c;
   --line: #eceff1;
-  --groww: #00d09c;
-  --green: #00d09c;
+  --accent: #14a37a;
+  --green: #14a37a;
   --red: #eb5b3c;
+  --amber: #b8862b;
 }
 
 @media (prefers-color-scheme: dark) {

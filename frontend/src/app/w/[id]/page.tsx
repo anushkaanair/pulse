@@ -89,8 +89,13 @@ export default function WatchlistPage() {
   return (
     <main className="min-h-screen bg-[var(--ground)]">
       <FeedStatusBar status={changes.feed.status} lagSeconds={changes.feed.lagSeconds} />
+      <div className="mx-auto max-w-7xl px-4 pt-6">
+        <Link href="/" className="text-sm text-[var(--muted)] hover:text-[var(--ink-dark)] underline-offset-4 hover:underline">← Back to watchlists</Link>
+        <h1 className="text-2xl font-medium tracking-tight text-[var(--ink-dark)] mt-1">{watchlist.name}</h1>
+        <p className="text-sm text-[var(--muted)] mt-1">{watchlist.items.length} {watchlist.items.length === 1 ? "symbol" : "symbols"}</p>
+      </div>
       <div className="mx-auto max-w-7xl px-4 py-8 grid grid-cols-1 lg:grid-cols-[1fr_350px] gap-8">
-        
+
         {/* Left Column - Main Content */}
         <div className="min-w-0">
           {/* Since You Last Looked */}
@@ -112,7 +117,7 @@ export default function WatchlistPage() {
                <h2 className="text-xl font-medium tracking-tight text-[var(--ink-dark)]">All tracked stocks</h2>
                <div className="hidden sm:flex gap-2">
                  {(["symbol", "price", "change", "volume"] as const).map((k) => (
-                   <button key={k} onClick={() => toggleSort(k)} className={`px-4 py-1.5 rounded-full border text-sm transition-colors ${sort.key === k ? "border-[var(--groww)] text-[var(--groww)] bg-[var(--groww)]/10" : "border-[var(--line)] text-[var(--muted)] hover:border-[var(--ink-dark)]"}`}>{k.charAt(0).toUpperCase() + k.slice(1)}{arrow(k)}</button>
+                   <button key={k} onClick={() => toggleSort(k)} className={`px-4 py-1.5 rounded-full border text-sm transition-colors ${sort.key === k ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent)]/10" : "border-[var(--line)] text-[var(--muted)] hover:border-[var(--ink-dark)]"}`}>{k.charAt(0).toUpperCase() + k.slice(1)}{arrow(k)}</button>
                  ))}
                </div>
             </div>
@@ -132,7 +137,7 @@ export default function WatchlistPage() {
                ) : watchlist.items.length > VIRTUALIZE_ABOVE ? (
                  <VirtualizedRows items={sortedItems} changes={changes} sparklines={sparklines} id={id} refreshWatchlist={refreshWatchlist} />
                ) : (
-                 <div className="divide-y divide-[var(--line)] px-4">
+                 <ul className="divide-y divide-[var(--line)] px-4">
                    {sortedItems.map((item) => (
                      <WatchlistRow
                        key={item.symbol}
@@ -143,7 +148,7 @@ export default function WatchlistPage() {
                        onRemove={() => void refreshWatchlist(() => api.removeItem(id, item.symbol))}
                      />
                    ))}
-                 </div>
+                 </ul>
                )}
             </div>
           </section>
@@ -160,13 +165,13 @@ export default function WatchlistPage() {
             </div>
             <div className="flex justify-between items-center mb-2 text-sm">
                <span className="text-[var(--muted)]">Meaningful changes</span>
-               <span className="font-medium text-[var(--groww)]">{changes.summary.meaningful}</span>
+               <span className="font-medium text-[var(--accent)]">{changes.summary.meaningful}</span>
             </div>
             <div className="flex justify-between items-center mb-8 text-sm">
                <span className="text-[var(--muted)]">Time away</span>
                <span className="font-medium text-[var(--ink-dark)]">{changes.baseline.kind === "first-visit" ? "First visit" : (away(changes.baseline.awaySeconds) ?? "—")}</span>
             </div>
-            <button onClick={markSeen} disabled={marking} className="w-full bg-[var(--groww)] text-white font-medium py-3 rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity">
+            <button onClick={markSeen} disabled={marking} className="w-full bg-[var(--accent)] text-white font-medium py-3 rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity">
                {marking ? "Marking…" : "Mark as seen"}
             </button>
           </div>
@@ -178,14 +183,15 @@ export default function WatchlistPage() {
               <AddSymbol watchlistId={id} onAdded={setWatchlist} />
               
               <div className="border-t border-[var(--line)] pt-5">
-                <button onClick={() => { setEditing((value) => !value); setSymbolsText(watchlist.items.map((item) => item.symbol).join(", ")); }} className="text-left text-sm text-[var(--groww)] font-medium flex items-center gap-2">
+                <button onClick={() => { setEditing((value) => !value); setSymbolsText(watchlist.items.map((item) => item.symbol).join(", ")); }} className="text-left text-sm text-[var(--accent)] font-medium flex items-center gap-2">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
                   {editing ? "Close bulk edit" : "Bulk edit symbols"}
                 </button>
                 
                 {editing ? (
                   <div className="mt-3 flex flex-col gap-3">
-                    <textarea value={symbolsText} onChange={(event) => setSymbolsText(event.target.value)} rows={3} className="w-full border border-[var(--line)] rounded-lg bg-[var(--ground)] p-3 text-sm outline-none focus:border-[var(--groww)] transition-colors" />
+                    <label className="sr-only" htmlFor="bulk-symbols">Symbols, comma separated</label>
+                    <textarea id="bulk-symbols" value={symbolsText} onChange={(event) => setSymbolsText(event.target.value)} rows={3} className="w-full border border-[var(--line)] rounded-lg bg-[var(--ground)] p-3 text-sm outline-none focus:border-[var(--accent)] transition-colors" />
                     <button onClick={() => void saveBulk()} className="bg-[var(--ink-dark)] text-white px-4 py-2 text-sm font-medium rounded-lg hover:opacity-90 transition-opacity">Save list</button>
                   </div>
                 ) : null}
@@ -223,28 +229,25 @@ function VirtualizedRows({
 
   return (
     <div ref={parentRef} className="mt-5 max-h-[640px] overflow-y-auto border-y border-[var(--line)]">
-      <div style={{ height: virtualizer.getTotalSize(), position: "relative", width: "100%" }}>
+      <ul style={{ height: virtualizer.getTotalSize(), position: "relative", width: "100%" }}>
         {virtualizer.getVirtualItems().map((virtualRow) => {
           const item = items[virtualRow.index];
           return (
-            <div
+            <WatchlistRow
               key={item.symbol}
-              data-index={virtualRow.index}
-              ref={virtualizer.measureElement}
+              item={item}
+              change={changes.items.find((entry) => entry.symbol === item.symbol)?.change}
+              sparkline={sparklines[item.symbol]}
+              onSensitivity={(choice) => void refreshWatchlist(() => api.setSensitivity(id, item.symbol, choice))}
+              onRemove={() => void refreshWatchlist(() => api.removeItem(id, item.symbol))}
+              dataIndex={virtualRow.index}
+              innerRef={virtualizer.measureElement}
               style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${virtualRow.start}px)` }}
               className={virtualRow.index > 0 ? "border-t border-[var(--line)]" : ""}
-            >
-              <WatchlistRow
-                item={item}
-                change={changes.items.find((entry) => entry.symbol === item.symbol)?.change}
-                sparkline={sparklines[item.symbol]}
-                onSensitivity={(choice) => void refreshWatchlist(() => api.setSensitivity(id, item.symbol, choice))}
-                onRemove={() => void refreshWatchlist(() => api.removeItem(id, item.symbol))}
-              />
-            </div>
+            />
           );
         })}
-      </div>
+      </ul>
     </div>
   );
 }

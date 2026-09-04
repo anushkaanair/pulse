@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { RangeBar } from "@/components/RangeBar";
 import { Sparkline } from "@/components/Sparkline";
 import { StaleBadge } from "@/components/StaleBadge";
@@ -12,19 +13,34 @@ function compactVolume(v: number) {
 
 // The single dense row used in both the plain <ul> (small lists) and the
 // virtualized list (>100 items) — same markup either way, so the two code
-// paths can never visually drift apart.
+// paths can never visually drift apart. Renders as a real <li> (was
+// silently downgraded to a <div> in an earlier pass, which broke the
+// list's accessibility role and the e2e assertions that key off it) —
+// the virtualized path needs to attach its own ref/style/index onto this
+// same <li>, so those are accepted as optional passthrough props rather
+// than wrapping WatchlistRow in an extra element (which would nest a
+// <div> between <ul> and <li> and be just as invalid).
 export function WatchlistRow({
-  item, change, sparkline, onSensitivity, onRemove,
+  item, change, sparkline, onSensitivity, onRemove, innerRef, style, dataIndex, className,
 }: {
   item: WatchlistItem;
   change: ChangeItem["change"] | undefined;
   sparkline: SparklinePoint[] | undefined;
   onSensitivity: (choice: Sensitivity) => void;
   onRemove: () => void;
+  innerRef?: (el: HTMLLIElement | null) => void;
+  style?: CSSProperties;
+  dataIndex?: number;
+  className?: string;
 }) {
   const direction = !change?.pctSincePrev ? "flat" : change.pctSincePrev.startsWith("-") ? "down" : "up";
   return (
-    <div className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-3 py-3 md:flex md:items-center md:gap-x-4 md:gap-y-0 hover:bg-[var(--ground)] transition-colors rounded-lg md:rounded-none px-2 md:px-0">
+    <li
+      ref={innerRef}
+      style={style}
+      data-index={dataIndex}
+      className={`grid grid-cols-[1fr_auto] gap-x-4 gap-y-3 py-3 md:flex md:items-center md:gap-x-4 md:gap-y-0 hover:bg-[var(--ground)] transition-colors rounded-lg md:rounded-none px-2 md:px-0 list-none${className ? ` ${className}` : ""}`}
+    >
       {/* 1. Symbol & Name */}
       <div className="flex items-center gap-3 md:min-w-28 md:flex-1">
         <div className="w-8 h-8 rounded-md bg-gradient-to-br from-gray-50 to-gray-100 text-[var(--ink-dark)] font-medium flex items-center justify-center text-sm border border-[var(--line)] hidden md:flex flex-shrink-0">
@@ -38,9 +54,9 @@ export function WatchlistRow({
 
       {/* 2. Price & Change */}
       <div className="text-right md:min-w-24 flex flex-col items-end justify-center">
-        <span className="numbers text-[14px] font-medium text-[var(--ink-dark)]">{item.quote ? `₹${item.quote.price.toFixed(2)}` : "—"}</span>
+        <span className="numbers text-[14px] font-medium text-[var(--ink-dark)]">{item.quote ? `₹${Number(item.quote.price).toFixed(2)}` : "—"}</span>
         {change?.pctSincePrev ? (
-          <span className={`numbers text-[11px] font-medium ${change.pctSincePrev.startsWith("-") ? "text-[var(--red)]" : "text-[var(--groww)]"}`}>{change.pctSincePrev}%</span>
+          <span className={`numbers text-[11px] font-medium ${change.pctSincePrev.startsWith("-") ? "text-[var(--red)]" : "text-[var(--accent)]"}`}>{change.pctSincePrev}%</span>
         ) : null}
       </div>
 
@@ -78,6 +94,6 @@ export function WatchlistRow({
           </button>
         </div>
       </div>
-    </div>
+    </li>
   );
 }
