@@ -420,10 +420,6 @@ export default function WatchlistPage() {
       </>
     );
   }
-      </div>
-      {conflict ? <ConflictModal theirs={conflict.theirs} mine={conflict.mine} onKeepMine={() => void saveBulk(conflict.mine, conflict.version)} onKeepTheirs={() => { setWatchlist((current) => current ? { ...current, version: conflict.version, items: conflict.theirs } : current); setConflict(undefined); setEditing(false); }} onMerge={() => void saveBulk([...new Set([...conflict.theirs.map((item) => item.symbol), ...conflict.mine])], conflict.version)} /> : null}
-    </main>
-  );
 }
 
 // Only mounted above VIRTUALIZE_ABOVE items. A fixed-height scroll
