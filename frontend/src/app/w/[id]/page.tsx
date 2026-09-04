@@ -190,6 +190,7 @@ export default function WatchlistPage() {
           ))}
           <button
             type="button"
+            data-tour="new-watchlist-button"
             onClick={() => { setNewListName(""); setNewListError(undefined); setNewListOpen(true); }}
             className="flex items-center gap-1.5 rounded-full border border-dashed border-[var(--line-2)] px-3 py-1.5 text-[13px] font-medium text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] ml-1"
           >

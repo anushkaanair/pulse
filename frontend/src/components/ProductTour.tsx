@@ -6,31 +6,24 @@ import { usePathname, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 
 type Page = "watchlist" | "history" | "paper";
-type ListTarget = "home" | "empty";
+type ListTarget = "home" | "fresh"; // default "home" — "fresh" is the newly-created demo list
 
 interface Step {
   page: Page;
-  list?: ListTarget; // default "home" — only the starter-packs step needs "empty"
+  list?: ListTarget;
   selector: string;
   title: string;
   text: string;
 }
 
-// Cross-page, element-anchored, priority-ordered walkthrough. Order mirrors
-// what actually matters: get a watchlist populated first (nothing else has
-// anything to show before that), then the two headline views (Attention
-// Deck, the full list), then the per-stock control, then the two secondary
-// pages (History, Paper trading) — each visited on its own and returned
-// from before the next one starts, never L2-to-L2 directly — and finally
-// the cosmetic theme toggle last.
+// Cross-page, element-anchored, priority-ordered walkthrough. Order:
+// Attention Deck + the tracked list first (the actual product), then the
+// "create a new watchlist" flow demonstrated live (not just described) by
+// actually creating one and landing on it to show the starter packs, then
+// back to the original/home list — which has real price movement, unlike
+// the fresh one — for Sensitivity, History (L1 teaser -> L2 -> back),
+// Paper trading (L1 teaser -> L2 -> back), and the theme toggle last.
 const STEPS: Step[] = [
-  {
-    page: "watchlist",
-    list: "empty",
-    selector: '[data-tour="starter-packs"]',
-    title: "Starter watchlist packs",
-    text: "One click gets you a real, live-priced watchlist instantly — Nifty Top 10, Banking, or IT. Nothing else here has anything to show until there's something to track.",
-  },
   {
     page: "watchlist",
     selector: '[data-tour="attention-deck"]',
@@ -42,6 +35,19 @@ const STEPS: Step[] = [
     selector: '[data-tour="stock-list"]',
     title: "All tracked stocks",
     text: "Every stock you track, always visible — the deck triages what's meaningful, it never hides the rest.",
+  },
+  {
+    page: "watchlist",
+    selector: '[data-tour="new-watchlist-button"]',
+    title: "Create a new watchlist",
+    text: "Keep separate watchlists for separate strategies — each gets its own baseline, history, and paper portfolio. Let's make one.",
+  },
+  {
+    page: "watchlist",
+    list: "fresh",
+    selector: '[data-tour="starter-packs"]',
+    title: "Starter watchlist packs",
+    text: "A brand-new list is empty — one click gets it a real, live-priced watchlist instantly: Nifty Top 10, Banking, or IT.",
   },
   {
     page: "watchlist",
@@ -96,9 +102,10 @@ const STEPS: Step[] = [
 const ACTIVE_KEY = "pulse-tour-active";
 const STEP_KEY = "pulse-tour-step";
 const HOME_KEY = "pulse-tour-home-id";
-const EMPTY_KEY = "pulse-tour-empty-id";
+const FRESH_KEY = "pulse-tour-fresh-id";
 const AUTOSHOWN_KEY = "pulse-tour-autoshown";
 const START_EVENT = "pulse:start-tour";
+const FRESH_LIST_NAME = "Starter packs demo";
 
 function pageFor(pathname: string): Page | null {
   if (/^\/w\/[^/]+\/history\/?$/.test(pathname)) return "history";
@@ -116,19 +123,18 @@ function urlFor(page: Page, listId: string): string {
   return page === "history" ? `/w/${listId}/history` : page === "paper" ? `/w/${listId}/paper` : `/w/${listId}`;
 }
 
-// Find an existing empty watchlist to demo the starter packs on, or create
-// one — rather than assume the account (e.g. the seeded `demo` user, or
-// anyone's own already-populated list) has an empty list sitting around.
-// Reused by name on repeat tours instead of spawning a fresh one each time.
-async function resolveEmptyListId(homeId: string): Promise<string> {
+// Reused by name on repeat tours (rather than spawning a fresh list every
+// single time someone takes the tour) — an untouched, already-empty list
+// from a previous run looks identical to a newly-created one from here.
+async function resolveFreshListId(): Promise<string> {
   const lists = await api.watchlists();
-  const home = lists.find((w) => w.id === homeId);
-  if (home && home.itemCount === 0) return homeId;
-  const existing = lists.find((w) => w.itemCount === 0);
+  const existing = lists.find((w) => w.name === FRESH_LIST_NAME && w.itemCount === 0);
   if (existing) return existing.id;
-  const created = await api.createWatchlist("Starter packs demo");
+  const created = await api.createWatchlist(FRESH_LIST_NAME);
   return created.id;
 }
+
+type Phase = "searching" | "found" | "timeout";
 
 export function ProductTour() {
   const pathname = usePathname();
@@ -139,35 +145,24 @@ export function ProductTour() {
   const [active, setActive] = useState(false);
   const [step, setStep] = useState(0);
   const [homeId, setHomeId] = useState<string | null>(null);
-  const [emptyId, setEmptyId] = useState<string | null>(null);
-  const [resolving, setResolving] = useState(false);
+  const [freshId, setFreshId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [phase, setPhase] = useState<Phase>("searching");
   const [rect, setRect] = useState<DOMRect | null>(null);
   const pollTimer = useRef<number | null>(null);
-  const resolvingRef = useRef(false);
+  const creatingRef = useRef(false);
 
-  const beginTour = async (originId: string) => {
-    try { sessionStorage.setItem(ACTIVE_KEY, "1"); sessionStorage.setItem(STEP_KEY, "0"); sessionStorage.setItem(HOME_KEY, originId); sessionStorage.removeItem(EMPTY_KEY); } catch {}
+  const beginTour = (originId: string) => {
+    try {
+      sessionStorage.setItem(ACTIVE_KEY, "1");
+      sessionStorage.setItem(STEP_KEY, "0");
+      sessionStorage.setItem(HOME_KEY, originId);
+      sessionStorage.removeItem(FRESH_KEY);
+    } catch { /* private mode etc. */ }
     setHomeId(originId);
-    setEmptyId(null);
+    setFreshId(null);
     setStep(0);
     setActive(true);
-    if (resolvingRef.current) return;
-    resolvingRef.current = true;
-    setResolving(true);
-    try {
-      const eid = await resolveEmptyListId(originId);
-      try { sessionStorage.setItem(EMPTY_KEY, eid); } catch {}
-      setEmptyId(eid);
-      if (eid !== originId) router.push(urlFor("watchlist", eid));
-    } catch {
-      // Couldn't resolve/create one — fall back to the origin list; the
-      // starter-packs step just degrades gracefully like any other step
-      // whose target isn't present (see the polling below).
-      setEmptyId(originId);
-    } finally {
-      setResolving(false);
-      resolvingRef.current = false;
-    }
   };
 
   // Restore an in-progress tour on refresh, and listen for the manual
@@ -178,18 +173,18 @@ export function ProductTour() {
         const savedHome = sessionStorage.getItem(HOME_KEY);
         if (savedHome) {
           const saved = Number(sessionStorage.getItem(STEP_KEY) ?? "0");
-          const savedEmpty = sessionStorage.getItem(EMPTY_KEY);
+          const savedFresh = sessionStorage.getItem(FRESH_KEY);
           setActive(true);
           setStep(Number.isFinite(saved) ? saved : 0);
           setHomeId(savedHome);
-          if (savedEmpty) setEmptyId(savedEmpty);
+          if (savedFresh) setFreshId(savedFresh);
         }
       }
     } catch { /* private mode etc. */ }
 
     const start = () => {
       const origin = idFromPath(window.location.pathname);
-      if (origin) void beginTour(origin);
+      if (origin) beginTour(origin);
     };
     window.addEventListener(START_EVENT, start);
     return () => window.removeEventListener(START_EVENT, start);
@@ -205,29 +200,38 @@ export function ProductTour() {
       if (localStorage.getItem(AUTOSHOWN_KEY)) return;
       localStorage.setItem(AUTOSHOWN_KEY, "1");
     } catch { return; }
-    const t = window.setTimeout(() => void beginTour(currentListId), 900); // let the page's own content paint first
+    const t = window.setTimeout(() => beginTour(currentListId), 900); // let the page's own content paint first
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, currentListId]);
 
   const current = active ? STEPS[step] : undefined;
-  const desiredListId = current ? (current.list === "empty" ? emptyId : homeId) : null;
+  const desiredListId = current ? (current.list === "fresh" ? freshId : homeId) : null;
   const onRightScreen = Boolean(active && current && page === current.page && (!desiredListId || desiredListId === currentListId));
 
   // Locate this step's target element once we're actually on the right
-  // page AND the right watchlist. Polls briefly since right after a
-  // navigation the target hasn't mounted (or its data hasn't loaded) yet.
-  // Prefers a currently-visible match when the selector exists more than
-  // once (desktop sidebar vs. mobile inline copy of the same card) — an
-  // off-screen/hidden duplicate would otherwise win by being first in the
-  // DOM regardless of what's actually on screen.
+  // page AND the right watchlist. Polls for up to ~8s since right after a
+  // navigation the destination page's own data fetch (not something this
+  // component can see) may still be in flight — the target simply isn't
+  // in the DOM yet. `phase` tracks that explicitly so the render below can
+  // show a neutral "loading" placeholder while searching, instead of the
+  // real step content floating unanchored over a page that's still saying
+  // "Loading…" itself (the bug this replaces: the old version rendered
+  // full step content immediately once page+list matched, with no regard
+  // for whether the actual element existed yet).
   useEffect(() => {
     if (pollTimer.current) window.clearTimeout(pollTimer.current);
-    if (!onRightScreen || !current) { setRect(null); return; }
+    if (!onRightScreen || !current) { setRect(null); setPhase("searching"); return; }
 
+    setPhase("searching");
+    setRect(null);
     let cancelled = false;
     let tries = 0;
     const pick = (selector: string) => {
+      // Prefers a currently-visible match when the selector exists more
+      // than once (desktop sidebar vs. the mobile inline copy of the same
+      // card) — an off-screen/hidden duplicate would otherwise win just by
+      // being first in the DOM.
       const els = Array.from(document.querySelectorAll<HTMLElement>(selector));
       return els.find((el) => el.offsetParent !== null) ?? els[0] ?? null;
     };
@@ -236,12 +240,13 @@ export function ProductTour() {
       const el = pick(current.selector);
       if (el) {
         setRect(el.getBoundingClientRect());
+        setPhase("found");
         el.scrollIntoView({ block: "center", behavior: "smooth" });
-      } else if (tries < 40) {
+      } else if (tries < 80) {
         tries++;
         pollTimer.current = window.setTimeout(find, 100);
       } else {
-        setRect(null); // give up gracefully — tooltip still shows, just unanchored
+        setPhase("timeout"); // give up gracefully — real content shows, just unanchored
       }
     };
     find();
@@ -263,33 +268,47 @@ export function ProductTour() {
   const end = () => {
     setActive(false);
     setRect(null);
-    try { [ACTIVE_KEY, STEP_KEY, HOME_KEY, EMPTY_KEY].forEach((k) => sessionStorage.removeItem(k)); } catch {}
+    try { [ACTIVE_KEY, STEP_KEY, HOME_KEY, FRESH_KEY].forEach((k) => sessionStorage.removeItem(k)); } catch {}
   };
 
-  const goTo = (next: number) => {
+  const ensureFreshList = async (): Promise<string | null> => {
+    if (freshId) return freshId;
+    if (creatingRef.current) return null;
+    creatingRef.current = true;
+    setCreating(true);
+    try {
+      const id = await resolveFreshListId();
+      setFreshId(id);
+      try { sessionStorage.setItem(FRESH_KEY, id); } catch {}
+      return id;
+    } catch {
+      return null; // creation failed — the starter-packs step just degrades gracefully like any other missing target
+    } finally {
+      setCreating(false);
+      creatingRef.current = false;
+    }
+  };
+
+  const goTo = async (next: number) => {
     if (next < 0) return;
     if (next >= STEPS.length) { end(); return; }
     const target = STEPS[next];
-    const targetListId = target.list === "empty" ? emptyId : homeId;
     try { sessionStorage.setItem(STEP_KEY, String(next)); } catch {}
     setStep(next);
-    if (!targetListId) return; // still resolving the empty list; render holds on the loading state below
+
+    let targetListId = target.list === "fresh" ? freshId : homeId;
+    if (target.list === "fresh" && !targetListId) {
+      targetListId = await ensureFreshList();
+    }
+    if (!targetListId) return;
     if (target.page !== page || targetListId !== currentListId) router.push(urlFor(target.page, targetListId));
   };
 
   if (!active || !page) return null;
 
-  if (resolving) {
-    return (
-      <div className="fixed z-[60] w-[min(320px,calc(100vw-32px))]" style={{ top: "50%", left: "50%", transform: "translate(-50%,-50%)" }}>
-        <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] shadow-[0_12px_40px_rgb(0,0,0,0.25)] p-4">
-          <p className="m-0 text-[13px] text-[var(--muted)]">Setting up a blank watchlist to show the starter packs…</p>
-        </div>
-      </div>
-    );
-  }
-
+  if (creating) return <LoadingCard text="Creating your new watchlist…" />;
   if (!current || !onRightScreen) return null; // mid cross-page/cross-list transition
+  if (phase === "searching") return <LoadingCard text="Loading…" />;
 
   return (
     <>
@@ -321,16 +340,26 @@ export function ProductTour() {
             <p className="m-0 text-[13px] leading-relaxed text-[var(--muted)]">{current.text}</p>
           </div>
           <div className="flex items-center justify-between px-4 py-2.5 border-t border-[var(--line)] bg-[var(--surface-2)]">
-            <button onClick={() => goTo(step - 1)} disabled={step === 0} className="text-[12.5px] font-medium text-[var(--muted)] hover:text-[var(--ink)] disabled:opacity-30 transition-colors">
+            <button onClick={() => void goTo(step - 1)} disabled={step === 0} className="text-[12.5px] font-medium text-[var(--muted)] hover:text-[var(--ink)] disabled:opacity-30 transition-colors">
               Back
             </button>
-            <button onClick={() => goTo(step + 1)} className="rounded-lg bg-[var(--accent)] px-3.5 py-1.5 text-[12.5px] font-semibold text-white hover:opacity-90 transition-opacity">
+            <button onClick={() => void goTo(step + 1)} className="rounded-lg bg-[var(--accent)] px-3.5 py-1.5 text-[12.5px] font-semibold text-white hover:opacity-90 transition-opacity">
               {step === STEPS.length - 1 ? "Done" : "Next"}
             </button>
           </div>
         </div>
       </div>
     </>
+  );
+}
+
+function LoadingCard({ text }: { text: string }) {
+  return (
+    <div className="fixed z-[60] w-[min(320px,calc(100vw-32px))]" style={{ top: "50%", left: "50%", transform: "translate(-50%,-50%)" }}>
+      <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] shadow-[0_12px_40px_rgb(0,0,0,0.25)] p-4">
+        <p className="m-0 text-[13px] text-[var(--muted)]">{text}</p>
+      </div>
+    </div>
   );
 }
 
