@@ -13,7 +13,7 @@ export interface Quote {
   volume: number; asOf: string; receivedAt: string; ageSeconds: number; stale: boolean; corrected: boolean; source: string;
 }
 export interface SymbolSearchResult { symbol: string; name: string; exchange: string }
-export interface WatchlistSummary { id: string; name: string; version: number; itemCount: number; updatedAt: string }
+export interface WatchlistSummary { id: string; name: string; version: number; itemCount: number; updatedAt: string; createdAt: string; archivedAt: string | null }
 export interface WatchlistItem { symbol: string; name: string; sensitivity: Sensitivity; quote: Quote | null; stale: boolean }
 export interface Watchlist { id: string; name: string; version: number; items: WatchlistItem[] }
 export interface Health { status: "ok" | "degraded"; db: "connected" | "unreachable"; feed: { status: FeedStatus; lastTickAt: string | null; lagSeconds: number | null } }
@@ -106,7 +106,18 @@ export const api = {
   health: () => USE_MOCK ? import("./mock").then(({ mock }) => mock.health()) : request<Health>("/health").then(({ data }) => data!),
   searchSymbols: (q: string) => USE_MOCK ? import("./mock").then(({ mock }) => mock.searchSymbols(q)) : request<SymbolSearchResult[]>(`/api/symbols?q=${encodeURIComponent(q)}`).then(({ data }) => data!),
   createWatchlist: (name: string) => USE_MOCK ? import("./mock").then(({ mock }) => mock.createWatchlist(name)) : request<Watchlist>("/api/watchlists", { method: "POST", body: JSON.stringify({ name }) }).then(({ data }) => data!),
-  watchlists: () => USE_MOCK ? import("./mock").then(({ mock }) => mock.watchlists()) : request<WatchlistSummary[]>("/api/watchlists").then(({ data }) => data!),
+  watchlists: (includeArchived = false) => USE_MOCK ? import("./mock").then(({ mock }) => mock.watchlists(includeArchived)) : request<WatchlistSummary[]>(`/api/watchlists${includeArchived ? "?includeArchived=true" : ""}`).then(({ data }) => data!),
+  renameWatchlist: (id: string, name: string) => USE_MOCK ? import("./mock").then(({ mock }) => mock.patchWatchlist(id, { name })) : request<WatchlistSummary>(`/api/watchlists/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }).then(({ data }) => data!),
+  setArchived: (id: string, archived: boolean) => USE_MOCK ? import("./mock").then(({ mock }) => mock.patchWatchlist(id, { archived })) : request<WatchlistSummary>(`/api/watchlists/${id}`, { method: "PATCH", body: JSON.stringify({ archived }) }).then(({ data }) => data!),
+  // A DELETE response is 204 No Content — no JSON body to parse, unlike
+  // every other endpoint, so this bypasses the shared request() helper
+  // (which always calls response.json() on success) rather than crashing
+  // on an empty body.
+  deleteWatchlist: async (id: string): Promise<void> => {
+    if (USE_MOCK) { const { mock } = await import("./mock"); return mock.deleteWatchlist(id); }
+    const res = await fetch(`${API_URL}/api/watchlists/${id}`, { method: "DELETE", headers: { "X-User-Id": userId() } });
+    if (!res.ok) throw new ApiRequestError(await res.json() as ApiError, res.status);
+  },
   watchlist: (id: string) => USE_MOCK ? import("./mock").then(({ mock }) => mock.watchlist(id)) : request<Watchlist>(`/api/watchlists/${id}`).then(({ data }) => data!),
   setSensitivity: (id: string, symbol: string, sensitivity: Sensitivity) => USE_MOCK ? import("./mock").then(({ mock }) => mock.setSensitivity(id, symbol, sensitivity)) : request<Watchlist>(`/api/watchlists/${id}/items/${symbol}`, { method: "PATCH", body: JSON.stringify({ sensitivity }) }).then(({ data }) => data!),
   addItem: (id: string, symbol: string) => USE_MOCK ? import("./mock").then(({ mock }) => mock.addItem(id, symbol)) : request<Watchlist>(`/api/watchlists/${id}/items`, { method: "POST", body: JSON.stringify({ symbol }) }).then(({ data }) => data!),

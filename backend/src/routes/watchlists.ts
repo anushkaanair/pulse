@@ -7,6 +7,7 @@ import { requireUserId } from "../middleware/userId.js";
 import { formatQuote, type QuoteRow } from "./quotes.js";
 
 const Name = z.object({ name: z.string().trim().min(1).max(64) });
+const Patch = z.object({ name: z.string().trim().min(1).max(64).optional(), archived: z.boolean().optional() }).refine((v) => v.name !== undefined || v.archived !== undefined, { message: "Nothing to update" });
 const Symbol = z.object({ symbol: z.string().trim().toUpperCase().min(1).max(20) });
 const Bulk = z.object({
   symbols: z.array(z.string().trim().toUpperCase().min(1).max(20)).max(500),
@@ -57,19 +58,69 @@ export function watchlistsRouter(pool: Pool) {
       );
       res.status(201).json({ ...rows[0], items: [] });
     } catch (err) {
+      // The unique index (009_watchlist_archive.sql) is the real guarantee
+      // under concurrent creates; this just turns Postgres's raw 23505 into
+      // the same {error,code} shape every other 4xx uses, instead of a
+      // generic 500.
+      if (err && typeof err === "object" && "code" in err && err.code === "23505") {
+        return next(new AppError(409, "DUPLICATE_NAME", "You already have a watchlist with this name."));
+      }
       next(err);
     }
   });
 
   r.get("/api/watchlists", async (req, res, next) => {
     try {
+      const includeArchived = req.query.includeArchived === "true";
       const { rows } = await pool.query(
-        `SELECT w.id, w.name, w.version, w.updated_at AS "updatedAt",
+        `SELECT w.id, w.name, w.version, w.updated_at AS "updatedAt", w.created_at AS "createdAt",
+                w.archived_at AS "archivedAt",
                 (SELECT count(*)::int FROM watchlist_items wi WHERE wi.watchlist_id = w.id) AS "itemCount"
-           FROM watchlists w WHERE w.user_id = $1 ORDER BY w.created_at`,
+           FROM watchlists w WHERE w.user_id = $1 ${includeArchived ? "" : "AND w.archived_at IS NULL"}
+        ORDER BY w.created_at`,
         [req.userId],
       );
       res.json(rows);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Rename and/or archive/unarchive. Deliberately not the same endpoint as
+  // item mutations (PUT .../items) — this only ever touches the
+  // watchlists row itself, never bumps the item-list `version` used for
+  // optimistic-concurrency conflict detection on bulk edits.
+  r.patch("/api/watchlists/:id", async (req, res, next) => {
+    try {
+      const patch = Patch.parse(req.body);
+      const sets: string[] = [];
+      const values: unknown[] = [];
+      if (patch.name !== undefined) { values.push(patch.name); sets.push(`name = $${values.length}`); }
+      if (patch.archived !== undefined) { values.push(patch.archived ? new Date() : null); sets.push(`archived_at = $${values.length}`); }
+      values.push(req.params.id, req.userId);
+      const { rows } = await pool.query(
+        `UPDATE watchlists SET ${sets.join(", ")}
+           WHERE id = $${values.length - 1} AND user_id = $${values.length}
+       RETURNING id, name, version, updated_at AS "updatedAt", created_at AS "createdAt", archived_at AS "archivedAt"`,
+        values,
+      );
+      if (rows.length === 0) throw new AppError(404, "NOT_FOUND", "Watchlist not found");
+      res.json(rows[0]);
+    } catch (err) {
+      if (err && typeof err === "object" && "code" in err && err.code === "23505") {
+        return next(new AppError(409, "DUPLICATE_NAME", "You already have a watchlist with this name."));
+      }
+      next(err);
+    }
+  });
+
+  // Hard delete — ON DELETE CASCADE (001_init.sql, 004_checkpoint_history.sql)
+  // takes items/snapshots/checkpoints with it. Irreversible, unlike archive.
+  r.delete("/api/watchlists/:id", async (req, res, next) => {
+    try {
+      const { rowCount } = await pool.query("DELETE FROM watchlists WHERE id = $1 AND user_id = $2", [req.params.id, req.userId]);
+      if (rowCount === 0) throw new AppError(404, "NOT_FOUND", "Watchlist not found");
+      res.status(204).end();
     } catch (err) {
       next(err);
     }

@@ -42,6 +42,7 @@ export function WatchlistRow({
   return (
     <li
       ref={innerRef}
+      id={`row-${item.symbol}`}
       style={style}
       data-index={dataIndex}
       className={`grid grid-cols-[1fr_auto] gap-x-4 gap-y-3 py-2.5 md:flex md:items-center md:gap-x-4 md:gap-y-0 hover:bg-[var(--surface-3)] transition-colors rounded-lg md:rounded-none px-2 md:px-0 list-none${className ? ` ${className}` : ""}`}

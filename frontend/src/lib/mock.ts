@@ -12,6 +12,16 @@ const symbols: SymbolSearchResult[] = [
 const quote = (symbol: string, price: string, stale = false): Quote => ({ symbol, price, prevClose: price, dayHigh: price, dayLow: price, weekHigh: (Number(price) * 1.3).toFixed(4), weekLow: (Number(price) * 0.75).toFixed(4), volume: 1234000, asOf: now, receivedAt: now, ageSeconds: stale ? 212 : 1, stale, corrected: false, source: "simulated" });
 const item = (symbol: string, price: string, stale = false): WatchlistItem => ({ symbol, name: symbols.find((entry) => entry.symbol === symbol)?.name ?? symbol, sensitivity: "normal", quote: quote(symbol, price, stale), stale });
 let current: Watchlist = { id: "demo-watchlist", name: "Market watch", version: 1, items: [item("TCS", "3812.4500"), item("SUZLON", "71.2000"), item("RELIANCE", "2951.0000"), item("ZOMATO", "241.3000"), item("IDEA", "13.4500", true), item("HDFCBANK", "1642.1000")] };
+// The /app selector page needs several lists (rename/archive/delete,
+// duplicate-name rejection, the "N of M worth a look" summary) — only
+// `current` gets the rich per-item demo payload above; the others are
+// realistic decoys (one empty, matching the real "three empty duplicate
+// lists" bug this was built to fix) so the list-level features have
+// something real to operate on without a full multi-watchlist mock engine.
+let lists: WatchlistSummary[] = [
+  { id: current.id, name: current.name, version: current.version, itemCount: current.items.length, updatedAt: now, createdAt: new Date(Date.parse(now) - 7 * 86_400_000).toISOString(), archivedAt: null },
+  { id: "mock-empty-list", name: "Long term", version: 1, itemCount: 0, updatedAt: now, createdAt: new Date(Date.parse(now) - 2 * 86_400_000).toISOString(), archivedAt: null },
+];
 let faults: FaultConfig = {};
 let acknowledged = false;
 // The seeded "Market watch" represents a RETURNING user with unseen
@@ -66,16 +76,67 @@ function changesData(): ChangesResponse {
 export const mock = {
   health: async (): Promise<Health> => ({ status: faults.outage ? "degraded" : "ok", db: "connected", feed: { status: faults.outage ? "stale" : "live", lastTickAt: now, lagSeconds: faults.outage ? 212 : 1 } }),
   searchSymbols: async (q: string) => symbols.filter((entry) => `${entry.symbol} ${entry.name}`.toLowerCase().includes(q.toLowerCase())),
-  createWatchlist: async (name: string) => { current = { id: crypto.randomUUID(), name, version: 1, items: [] }; acknowledged = false; firstVisit = true; return current; },
-  watchlists: async (): Promise<WatchlistSummary[]> => [{ id: current.id, name: current.name, version: current.version, itemCount: current.items.length, updatedAt: now }],
+  createWatchlist: async (name: string) => {
+    const trimmed = name.trim();
+    if (lists.some((l) => !l.archivedAt && l.name.toLowerCase() === trimmed.toLowerCase())) {
+      throw new ApiRequestError({ error: "You already have a watchlist with this name.", code: "DUPLICATE_NAME" }, 409);
+    }
+    const id = crypto.randomUUID();
+    lists = [...lists, { id, name: trimmed, version: 1, itemCount: 0, updatedAt: now, createdAt: now, archivedAt: null }];
+    // Becomes the new "active" detail-page watchlist — see the module
+    // comment above on why only one list at a time gets rich item data.
+    current = { id, name: trimmed, version: 1, items: [] };
+    acknowledged = false; firstVisit = true;
+    return current;
+  },
+  watchlists: async (includeArchived = false): Promise<WatchlistSummary[]> => lists.filter((l) => includeArchived || !l.archivedAt),
+  patchWatchlist: async (id: string, patch: { name?: string; archived?: boolean }): Promise<WatchlistSummary> => {
+    const target = lists.find((l) => l.id === id);
+    if (!target) throw new ApiRequestError({ error: "Watchlist not found", code: "NOT_FOUND" }, 404);
+    if (patch.name !== undefined) {
+      const trimmed = patch.name.trim();
+      if (lists.some((l) => l.id !== id && !l.archivedAt && l.name.toLowerCase() === trimmed.toLowerCase())) {
+        throw new ApiRequestError({ error: "You already have a watchlist with this name.", code: "DUPLICATE_NAME" }, 409);
+      }
+      target.name = trimmed;
+      if (id === current.id) current = { ...current, name: trimmed };
+    }
+    if (patch.archived !== undefined) target.archivedAt = patch.archived ? new Date().toISOString() : null;
+    lists = [...lists];
+    return target;
+  },
+  deleteWatchlist: async (id: string): Promise<void> => { lists = lists.filter((l) => l.id !== id); },
   watchlist: async (id: string) => { if (id !== current.id) throw new Error("Watchlist not found"); return current; },
   setSensitivity: async (id: string, symbol: string, sensitivity: Sensitivity) => { await mock.watchlist(id); current = { ...current, version: current.version + 1, items: current.items.map((entry) => entry.symbol === symbol ? { ...entry, sensitivity } : entry) }; return current; },
   addItem: async (id: string, symbol: string) => { await mock.watchlist(id); if (!symbols.some((entry) => entry.symbol === symbol)) throw new Error("Unknown symbol"); if (!current.items.some((entry) => entry.symbol === symbol)) current = { ...current, version: current.version + 1, items: [...current.items, item(symbol, "0.0000")] }; return current; },
   removeItem: async (id: string, symbol: string) => { await mock.watchlist(id); current = { ...current, version: current.version + 1, items: current.items.filter((entry) => entry.symbol !== symbol) }; return current; },
   replaceItems: async (id: string, requested: string[], version: number) => { await mock.watchlist(id); if (version !== current.version) { const response: ConflictResponse = { error: "Watchlist version conflict", code: "VERSION_CONFLICT", current: { version: current.version, items: current.items } }; throw new ApiRequestError(response, 409); } current = { ...current, version: current.version + 1, items: requested.map((symbol) => current.items.find((entry) => entry.symbol === symbol) ?? item(symbol, "0.0000")) }; return current; },
-  changes: async (_id: string, _limit: number, etag?: string): Promise<ChangesPoll> => etag === "mock-snapshot-1" ? { data: null, etag, notModified: true } : { data: changesData(), etag: "mock-snapshot-1", notModified: false },
+  changes: async (id: string, _limit: number, etag?: string): Promise<ChangesPoll> => {
+    // Any list other than the "active" one (see module comment) is a
+    // realistic empty decoy, not a fully-simulated watchlist — real,
+    // honest "nothing meaningful" rather than reusing `current`'s payload
+    // under a different id.
+    if (id !== current.id) {
+      const list = lists.find((l) => l.id === id);
+      return {
+        data: {
+          snapshotId: `mock-snapshot-${id}`, baseline: { takenAt: null, kind: "first-visit", awaySeconds: null },
+          asOf: now, feed: { status: "live", lagSeconds: 1 },
+          digest: "First look — this is your baseline. Come back later and this line will tell you what changed.",
+          summary: { meaningful: 0, total: list?.itemCount ?? 0, stale: 0, newSinceLast: 0 },
+          attentionBudget: 5, topMover: null, retractions: [], items: [],
+        }, etag: `mock-snapshot-${id}`, notModified: false,
+      };
+    }
+    return etag === "mock-snapshot-1" ? { data: null, etag, notModified: true } : { data: changesData(), etag: "mock-snapshot-1", notModified: false };
+  },
   checkpoint: async (_id: string, _snapshotId: string) => { acknowledged = true; firstVisit = false; return { takenAt: now }; },
-  quotes: async (requested: string[]) => current.items.filter((entry) => requested.includes(entry.symbol)).flatMap((entry) => entry.quote ? [entry.quote] : []),
+  // The real backend always has a NIFTY row (the market-index proxy every
+  // symbol's beta is measured against); the mock's `current.items` never
+  // includes it, so it's synthesized here rather than left to render as a
+  // dash in the market rail.
+  quotes: async (requested: string[]) => [...current.items, item("NIFTY", "22150.4000")]
+    .filter((entry) => requested.includes(entry.symbol)).flatMap((entry) => entry.quote ? [entry.quote] : []),
   setFaults: async (config: FaultConfig) => { faults = { ...faults, ...config }; return { active: faults }; },
   sparklines: async (_id: string, limit: number): Promise<Sparklines> => {
     const out: Sparklines = {};

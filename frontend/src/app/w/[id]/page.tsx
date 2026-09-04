@@ -74,6 +74,35 @@ export default function WatchlistPage() {
   }, [id]);
   const refreshWatchlist = async (work: () => Promise<Watchlist>) => { try { setWatchlist(await work()); } catch (cause) { setError(cause); } };
   const markSeen = async () => { if (!changes) return; setMarking(true); try { await api.checkpoint(id, changes.snapshotId); const latest = await api.changes(id); setChanges(latest.data ?? undefined); } catch (cause) { setError(cause); } finally { setMarking(false); } };
+  // Deep link from a preview chip on /app ("BAJFINANCE -2.52%" → this
+  // exact row in this exact list). Plain window.location rather than
+  // useSearchParams — this only needs to run once, and useSearchParams
+  // would require wrapping the whole page in a Suspense boundary for the
+  // production build for a one-off scroll-and-highlight.
+  const deepLinkDone = useRef(false);
+  useEffect(() => {
+    if (deepLinkDone.current || !watchlist || !changes) return;
+    const symbol = new URLSearchParams(window.location.search).get("symbol");
+    if (!symbol) return;
+    deepLinkDone.current = true;
+    // The attention deck and sparklines above this list are still settling
+    // their own layout for a beat after `changes` first arrives — scrolling
+    // immediately landed short (found live: the target row was still
+    // drifting downward as the deck finished sizing itself). A short delay
+    // lets that settle before measuring position. `changes` also re-fires
+    // on every 15s poll, so this only ever runs once (deepLinkDone) —
+    // otherwise a stale ?symbol= in the URL would re-scroll-and-flash the
+    // page out from under the user every time it repolls.
+    const t = setTimeout(() => {
+      const row = document.getElementById(`row-${symbol}`);
+      if (!row) return;
+      row.scrollIntoView({ block: "center", behavior: "smooth" });
+      row.classList.add("deep-link-flash");
+      setTimeout(() => row.classList.remove("deep-link-flash"), 2200);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [watchlist, changes]);
+
   const requestedSymbols = () => [...new Set(symbolsText.split(",").map((symbol) => symbol.trim().toUpperCase()).filter(Boolean))];
   const createNewList = async () => {
     const trimmed = newListName.trim();
