@@ -107,6 +107,8 @@ CREATE TABLE watchlist_items (
   watchlist_id uuid NOT NULL REFERENCES watchlists(id) ON DELETE CASCADE,
   symbol       text NOT NULL REFERENCES symbols(symbol),
   added_at     timestamptz NOT NULL DEFAULT now(),
+  sensitivity  text NOT NULL DEFAULT 'normal'
+               CHECK (sensitivity IN ('quiet','normal','loud')),
   PRIMARY KEY (watchlist_id, symbol)           -- idempotent add, no dupes
 );
 
@@ -180,8 +182,13 @@ GET  /api/watchlists
   200 [ { id, name, version, itemCount, updatedAt } ]
 
 GET  /api/watchlists/:id
-  200 { id, name, version, items:[ { symbol, name, quote: Quote|null, stale:boolean } ] }
+  200 { id, name, version, items:[ { symbol, name, sensitivity, quote: Quote|null, stale:boolean } ] }
   404 NOT_FOUND
+
+PATCH /api/watchlists/:id/items/:symbol   -- per-symbol sensitivity
+  body { sensitivity: "quiet"|"normal"|"loud" }
+  200 { id, version, items:[...] }        -- bumps version
+  404 NOT_FOUND (list or symbol)
 
 POST /api/watchlists/:id/items          -- idempotent add
   body { symbol }
@@ -199,9 +206,10 @@ PUT  /api/watchlists/:id/items          -- bulk replace with concurrency check
 GET  /api/watchlists/:id/changes?limit=20
   200 {
     snapshotId,                          -- promote this to mark as seen
-    baseline: { takenAt:iso, kind:"checkpoint"|"first-visit" },
+    baseline: { takenAt:iso|null, kind:"checkpoint"|"first-visit", awaySeconds:number|null },
     asOf: iso,                           -- newest as_of across items
     feed: { status, lagSeconds },
+    digest: string,                      -- one sentence: "Since 2 hours ago: 3 things worth a look — TCS −3.09% (2.8σ), ... 12 others: nothing meaningful."
     summary: { meaningful:number, total:number, stale:number, newSinceLast:number },
     items: [ {
       symbol, name,
@@ -213,7 +221,8 @@ GET  /api/watchlists/:id/changes?limit=20
         events: ["DAY_HIGH_BREACHED"|"DAY_LOW_BREACHED"|"VOLUME_SPIKE"|"GAP"|"CORRECTED"],
         confidence: "high"|"low",        -- low if insufficient history for σ
         attention: number,               -- ranking score
-        why: string                      -- "Moved −3.1%, unusual for TCS (2.8σ)"
+        sensitivity: "quiet"|"normal"|"loud",
+        why: string                      -- "Down 3.09% — unusual for TCS (2.8σ). Broke below the day's low."
       }
     } ]                                  -- sorted by attention desc; "none" last
   }
@@ -241,9 +250,13 @@ POST /api/_sim/faults
 **"Meaningful" definition (documented, configurable via env):**
 - Move `r = (price − snapshotPrice) / snapshotPrice`.
 - Trailing σ = stdev of tick-to-tick returns over last `HISTORY_WINDOW`
-  (default 50) history rows; `z = r / σ`.
-- `kind="move"` if `|z| ≥ Z_THRESHOLD` (default 2.0). If fewer than 20
-  history rows: fall back to `|r| ≥ 1.5%`, `confidence="low"`.
+  (default 50) history rows.
+- **Away-aware:** the move spans `n = clamp(elapsedMs / TICK_MS, 1, HISTORY_WINDOW)`
+  ticks, so `z = r / (σ · √n)`. The same 2% is meaningful after 5 minutes and
+  ordinary after 5 days for the same stock.
+- **Sensitivity multiplier** on the bar: quiet ×1.75, normal ×1.0, loud ×0.6.
+- `kind="move"` if `|z| ≥ Z_THRESHOLD × multiplier` (default 2.0). If fewer
+  than 20 history rows: fall back to `|r| ≥ 1.5% × multiplier`, `confidence="low"`.
 - Events add to attention regardless of z: `DAY_HIGH_BREACHED` / `_LOW_`
   (+1.0), `VOLUME_SPIKE` (volume > 2× trailing mean, +0.8), `GAP` (open vs
   prevClose > 2%, +0.6), `CORRECTED` (+0.5, always surfaced).
@@ -309,13 +322,20 @@ Build in this order; each step leaves the server runnable.
 7. `backend/src/routes/health.ts` — db + feed status.
 8. `backend/src/routes/symbols.ts` — seed ~60 NSE names in migration `002_seed.sql`.
 9. `backend/src/routes/watchlists.ts` — CRUD, idempotent item add/remove,
-   versioned bulk `PUT` with `409`.
-10. `backend/src/changes/stats.ts` — trailing σ, mean volume, from history.
+   versioned bulk `PUT` with `409`, `PATCH /items/:symbol { sensitivity }`.
+10. `backend/src/changes/stats.ts` — trailing σ and mean *per-tick volume
+    increment* (history `volume` is cumulative; diff it), from history.
 11. `backend/src/changes/engine.ts` — pure function:
-    `(snapshot, quotes, stats, config) → ChangeItem[]`. No I/O. Unit-test it.
+    `(snapshot, elapsedMs, items, stats, config) → ranked ChangeItem[]`,
+    plus `buildDigest(results, baselineKind, elapsedMs) → string`. Implements
+    √n scaling and the sensitivity multiplier. No I/O. Unit-test: first
+    visit, `new`, √n (same move meaningful at 5 min / not at 5 days), calm vs
+    volatile stock, thin history fallback, quiet/loud, events, digest text.
 12. `backend/src/routes/changes.ts` — load checkpoint (or first-visit), load
-    quotes+stats, run engine, mint `snapshots` row, return. ETag = hash of
-    `(snapshotId, asOf)`.
+    quotes+stats, run engine, build digest, mint `snapshots` row, return.
+    **Mint only if the payload differs from the latest unpromoted snapshot**
+    (idle polling must not write). ETag = `"<snapshotId>:<asOf>"`, honour
+    `If-None-Match` → 304.
 13. `backend/src/routes/checkpoint.ts` — promote snapshot; verify ownership.
 14. `backend/src/routes/sim.ts` — fault endpoint, gated by `SIM_ADMIN`.
 15. `backend/src/__tests__/engine.test.ts` — z-score, fallback, events, new/none.
@@ -341,13 +361,17 @@ typed client. Never invent fields — section 5 is the source of truth.
    the backend is live (`NEXT_PUBLIC_USE_MOCK=true`).
 4. `app/page.tsx` — watchlist index: list, create, empty state.
 5. `app/w/[id]/page.tsx` — the main screen, two zones:
-   - **"Since you last looked"** panel (top): from `/changes`. Shows
-     `baseline`, `summary`, ranked cards with `why`, `zScore` badge, event
-     chips, `confidence="low"` marker, `CORRECTED` flag. "Nothing meaningful
-     changed" is a designed state, not an empty div. Button: **"Mark as
-     seen"** → `POST /checkpoint { snapshotId }`.
+   - **"Since you last looked"** panel (top): from `/changes`. First line is
+     `digest` (the catch-me-up sentence — typographically the loudest text
+     on the page), then `baseline.awaySeconds` as "you were away 2h", then
+     ranked cards with `why`, `zScore` badge, event chips, `confidence="low"`
+     marker, `CORRECTED` flag, and a small quiet/loud chip when
+     `change.sensitivity !== "normal"`. "Nothing meaningful changed" is a
+     designed state, not an empty div. Button: **"Mark as seen"** →
+     `POST /checkpoint { snapshotId }`.
    - **Full list** below: every item with price, `pctSincePrev`, `stale`
-     badge showing `ageSeconds`, remove action.
+     badge showing `ageSeconds`, a **sensitivity control** (quiet / normal /
+     loud segmented toggle → `PATCH /items/:symbol`), remove action.
 6. `components/StaleBadge.tsx`, `ChangeCard.tsx`, `FeedStatusBar.tsx`
    (reads `/health` + `changes.feed`; degraded → persistent banner "Data as
    of HH:MM, feed delayed").
@@ -424,46 +448,41 @@ centerpiece), Interpretation 2 (no angle yet — couldn't have one), Edge cases
 | H9–H10 | Integrate: swap Codex to real API, fix contract drift. **Adversary pass #1.** | Same. |
 | H10–H16 | Sleep. | Sleep. |
 | H16–H20 | `torture.ts`; fix everything it finds. Ingest tests. | Conflict modal (409), feed status bar, faults dev page, virtualization. |
-| H20–H22 | README, DECISIONS, 100-word pitch. Fresh-clone test. **Adversary pass #2.** | Playwright e2e, build clean. |
+| H20–H22 | README, DECISIONS, 200-word pitch (the form says 200, not the FAQ's 100). Fresh-clone test. **Adversary pass #2.** | Playwright e2e, build clean. |
 | **H22** | **Safety-net submit** (1,000-cap). | — |
 | H22–H28 | Scale check (500 symbols / 50 users), polish `why` strings, prune. | Visual polish, empty-state copy, responsive. |
 | H28–H30 | Final fresh-clone test, final submit with buffer. | — |
 
-## 11. Additions after feature review (logged in DECISIONS.md)
+## 11. Feature review — what was added, and what was deliberately not
 
-**C. Away-aware significance (correctness fix).** σ from history is per-tick;
-the move spans `n` ticks since the checkpoint. `z = r / (σ_tick · √n)`,
-`n = max(1, elapsedMs / TICK_MS)`, capped at `HISTORY_WINDOW` so multi-day
-absences still flag genuinely large moves. Unit-tested: same 2% move → high z
-at 5 min, low z at 5 days for the same stock.
+Three additions, now folded into §4, §5, §8, §9 above (rationale in
+`DECISIONS.md`):
 
-**A. Catch-me-up digest.** `changes` response gains
-`digest: string` — one templated sentence built from `summary` + the top 3
-`why` strings + a "N others: nothing meaningful" tail. Baseline adds
-`awaySeconds`. No new endpoint. Frontend renders it as the first line of
-Zone 1, above the cards.
+- **Away-aware significance** — √n scaling of σ. A correctness fix, not a
+  feature: without it the engine over-flags long absences, which is exactly
+  the case the brief cares about.
+- **Catch-me-up digest** — one generated sentence at the top of Zone 1.
+  Pain point: after days away, nobody wants 40 cards; they want 3 sentences.
+- **Per-symbol sensitivity** (quiet / normal / loud) — the user's own answer
+  to "how loud should this one be?" Pain point: alert fatigue is why people
+  stop opening watchlists.
 
-**B. Per-symbol sensitivity.**
-```sql
-ALTER TABLE watchlist_items ADD COLUMN sensitivity text NOT NULL DEFAULT 'normal'
-  CHECK (sensitivity IN ('quiet','normal','loud'));
-```
-Z multiplier: quiet ×1.75, normal ×1.0, loud ×0.6 (env-configurable).
-```
-PATCH /api/watchlists/:id/items/:symbol   body { sensitivity }
-  200 { id, version, items:[...] }   -- items now carry `sensitivity`
-```
-`ChangeItem.change` gains `sensitivity` so the UI can show *why* a small move
-surfaced ("loud") or a big one didn't ("quiet"). Bumps `version`.
+Why these and not more: each changes *what the core surfaces* rather than
+adding a screen. The rubric scores depth, not feature count.
 
-**Designed for, not built (say so in the pitch):** notifications on
-meaningful change while away (engine output is the payload; checkpoint
-dedup means no pings for things already seen); visit timeline from
-`snapshots`.
+**Designed for, not built — say so in the pitch:**
+- Notifications on meaningful change while away: the engine output is
+  already the payload, and checkpoint dedup means you'd never be pinged
+  about something you already saw. Delivery infra is out of scope.
+- Visit timeline ("what changed between Tuesday and Wednesday?"): every
+  promoted snapshot is retained; it's a UI over `snapshots`.
 
-### Roadmap deltas
-- H6–H9 Claude: engine includes C (√n scaling) and B (multiplier). Codex:
-  digest line in Zone 1 on mocks.
-- H16–H20 Claude: A (`digest`), `PATCH sensitivity`, migration 003. Codex:
-  sensitivity control in the full-list row + "quiet/loud" chip on cards.
-- Everything else unchanged. Safety-net submit stays at H22.
+**Considered and rejected as noise:** dead-weight pruning suggestions,
+shareable read-only links, undo-remove, paste-many-tickers, portfolio
+weighting.
+
+### Roadmap deltas (already reflected in the table above)
+- H6–H9: engine includes √n scaling and the sensitivity multiplier; Codex
+  renders the digest line on mocks.
+- H16–H20: `PATCH sensitivity`, migration for the column, digest wired to
+  real data; Codex adds the sensitivity control and quiet/loud chip.

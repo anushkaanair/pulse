@@ -1,23 +1,51 @@
 {
   "snapshotId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-  "baseline": { "takenAt": "2026-09-04T09:15:00.000Z", "kind": "checkpoint" },
+  "baseline": {
+    "takenAt": "2026-09-04T09:15:00.000Z",
+    "kind": "checkpoint",
+    "awaySeconds": 8833
+  },
   "asOf": "2026-09-04T11:42:13.000Z",
-  "feed": { "status": "live", "lagSeconds": 1 },
-  "summary": { "meaningful": 3, "total": 6, "stale": 1, "newSinceLast": 1 },
+  "feed": {
+    "status": "live",
+    "lagSeconds": 1
+  },
+  "digest": "Since 2 hours ago: 3 things worth a look — TCS -3.09% (2.8σ), SUZLON +7.07% on heavy volume, RELIANCE price corrected. 2 others: nothing meaningful.",
+  "summary": {
+    "meaningful": 3,
+    "total": 6,
+    "stale": 1,
+    "newSinceLast": 1
+  },
   "items": [
     {
       "symbol": "TCS",
       "name": "Tata Consultancy Services",
       "quote": {
-        "symbol": "TCS", "price": "3812.4500", "prevClose": "3934.0000",
-        "dayHigh": "3940.2000", "dayLow": "3801.1000", "volume": 2841233,
-        "asOf": "2026-09-04T11:42:13.000Z", "receivedAt": "2026-09-04T11:42:14.000Z",
-        "ageSeconds": 1, "stale": false, "corrected": false, "source": "simulated"
+        "symbol": "TCS",
+        "price": "3812.4500",
+        "prevClose": "3934.0000",
+        "dayHigh": "3940.2000",
+        "dayLow": "3801.1000",
+        "volume": 2841233,
+        "asOf": "2026-09-04T11:42:13.000Z",
+        "receivedAt": "2026-09-04T11:42:14.000Z",
+        "ageSeconds": 1,
+        "stale": false,
+        "corrected": false,
+        "source": "simulated"
       },
       "stale": false,
       "change": {
-        "kind": "move", "pctSincePrev": "-3.09", "zScore": -2.8,
-        "events": ["DAY_LOW_BREACHED"], "confidence": "high", "attention": 3.8,
+        "kind": "move",
+        "pctSincePrev": "-3.09",
+        "zScore": -2.8,
+        "events": [
+          "DAY_LOW_BREACHED"
+        ],
+        "confidence": "high",
+        "attention": 3.8,
+        "sensitivity": "normal",
         "why": "Moved −3.09%, unusual for TCS (2.8σ). Broke below the day's low."
       }
     },
@@ -25,15 +53,31 @@
       "symbol": "SUZLON",
       "name": "Suzlon Energy",
       "quote": {
-        "symbol": "SUZLON", "price": "71.2000", "prevClose": "66.5000",
-        "dayHigh": "71.9000", "dayLow": "66.1000", "volume": 91233812,
-        "asOf": "2026-09-04T11:42:12.000Z", "receivedAt": "2026-09-04T11:42:13.000Z",
-        "ageSeconds": 2, "stale": false, "corrected": false, "source": "simulated"
+        "symbol": "SUZLON",
+        "price": "71.2000",
+        "prevClose": "66.5000",
+        "dayHigh": "71.9000",
+        "dayLow": "66.1000",
+        "volume": 91233812,
+        "asOf": "2026-09-04T11:42:12.000Z",
+        "receivedAt": "2026-09-04T11:42:13.000Z",
+        "ageSeconds": 2,
+        "stale": false,
+        "corrected": false,
+        "source": "simulated"
       },
       "stale": false,
       "change": {
-        "kind": "event", "pctSincePrev": "+7.07", "zScore": 1.6,
-        "events": ["VOLUME_SPIKE", "DAY_HIGH_BREACHED"], "confidence": "high", "attention": 3.4,
+        "kind": "event",
+        "pctSincePrev": "+7.07",
+        "zScore": 1.6,
+        "events": [
+          "VOLUME_SPIKE",
+          "DAY_HIGH_BREACHED"
+        ],
+        "confidence": "high",
+        "attention": 3.4,
+        "sensitivity": "loud",
         "why": "Up 7.07% on 4× normal volume. That's a big move, but only 1.6σ for a stock this volatile — the volume is the story."
       }
     },
@@ -41,15 +85,30 @@
       "symbol": "RELIANCE",
       "name": "Reliance Industries",
       "quote": {
-        "symbol": "RELIANCE", "price": "2951.0000", "prevClose": "2948.5000",
-        "dayHigh": "2960.0000", "dayLow": "2940.0000", "volume": 5123001,
-        "asOf": "2026-09-04T11:42:13.000Z", "receivedAt": "2026-09-04T11:42:13.000Z",
-        "ageSeconds": 1, "stale": false, "corrected": true, "source": "simulated"
+        "symbol": "RELIANCE",
+        "price": "2951.0000",
+        "prevClose": "2948.5000",
+        "dayHigh": "2960.0000",
+        "dayLow": "2940.0000",
+        "volume": 5123001,
+        "asOf": "2026-09-04T11:42:13.000Z",
+        "receivedAt": "2026-09-04T11:42:13.000Z",
+        "ageSeconds": 1,
+        "stale": false,
+        "corrected": true,
+        "source": "simulated"
       },
       "stale": false,
       "change": {
-        "kind": "event", "pctSincePrev": "+0.08", "zScore": 0.1,
-        "events": ["CORRECTED"], "confidence": "high", "attention": 0.6,
+        "kind": "event",
+        "pctSincePrev": "+0.08",
+        "zScore": 0.1,
+        "events": [
+          "CORRECTED"
+        ],
+        "confidence": "high",
+        "attention": 0.6,
+        "sensitivity": "normal",
         "why": "The exchange revised a price you may have seen. Now ₹2951.00."
       }
     },
@@ -57,15 +116,28 @@
       "symbol": "ZOMATO",
       "name": "Zomato",
       "quote": {
-        "symbol": "ZOMATO", "price": "241.3000", "prevClose": "239.9000",
-        "dayHigh": "243.0000", "dayLow": "238.5000", "volume": 18233110,
-        "asOf": "2026-09-04T11:42:10.000Z", "receivedAt": "2026-09-04T11:42:11.000Z",
-        "ageSeconds": 4, "stale": false, "corrected": false, "source": "simulated"
+        "symbol": "ZOMATO",
+        "price": "241.3000",
+        "prevClose": "239.9000",
+        "dayHigh": "243.0000",
+        "dayLow": "238.5000",
+        "volume": 18233110,
+        "asOf": "2026-09-04T11:42:10.000Z",
+        "receivedAt": "2026-09-04T11:42:11.000Z",
+        "ageSeconds": 4,
+        "stale": false,
+        "corrected": false,
+        "source": "simulated"
       },
       "stale": false,
       "change": {
-        "kind": "new", "pctSincePrev": null, "zScore": null,
-        "events": [], "confidence": "high", "attention": 0.5,
+        "kind": "new",
+        "pctSincePrev": null,
+        "zScore": null,
+        "events": [],
+        "confidence": "high",
+        "attention": 0.5,
+        "sensitivity": "normal",
         "why": "Added since you last looked. No baseline yet."
       }
     },
@@ -73,15 +145,28 @@
       "symbol": "IDEA",
       "name": "Vodafone Idea",
       "quote": {
-        "symbol": "IDEA", "price": "13.4500", "prevClose": "13.3000",
-        "dayHigh": "13.6000", "dayLow": "13.2500", "volume": 210331100,
-        "asOf": "2026-09-04T11:38:41.000Z", "receivedAt": "2026-09-04T11:38:42.000Z",
-        "ageSeconds": 212, "stale": true, "corrected": false, "source": "simulated"
+        "symbol": "IDEA",
+        "price": "13.4500",
+        "prevClose": "13.3000",
+        "dayHigh": "13.6000",
+        "dayLow": "13.2500",
+        "volume": 210331100,
+        "asOf": "2026-09-04T11:38:41.000Z",
+        "receivedAt": "2026-09-04T11:38:42.000Z",
+        "ageSeconds": 212,
+        "stale": true,
+        "corrected": false,
+        "source": "simulated"
       },
       "stale": true,
       "change": {
-        "kind": "none", "pctSincePrev": "+1.13", "zScore": 0.3,
-        "events": [], "confidence": "high", "attention": 0.3,
+        "kind": "none",
+        "pctSincePrev": "+1.13",
+        "zScore": 0.3,
+        "events": [],
+        "confidence": "high",
+        "attention": 0.3,
+        "sensitivity": "normal",
         "why": "No meaningful change. Last data is 3½ minutes old."
       }
     },
@@ -89,15 +174,28 @@
       "symbol": "HDFCBANK",
       "name": "HDFC Bank",
       "quote": {
-        "symbol": "HDFCBANK", "price": "1642.1000", "prevClose": "1640.0000",
-        "dayHigh": "1648.0000", "dayLow": "1636.5000", "volume": 7120033,
-        "asOf": "2026-09-04T11:42:13.000Z", "receivedAt": "2026-09-04T11:42:13.000Z",
-        "ageSeconds": 1, "stale": false, "corrected": false, "source": "simulated"
+        "symbol": "HDFCBANK",
+        "price": "1642.1000",
+        "prevClose": "1640.0000",
+        "dayHigh": "1648.0000",
+        "dayLow": "1636.5000",
+        "volume": 7120033,
+        "asOf": "2026-09-04T11:42:13.000Z",
+        "receivedAt": "2026-09-04T11:42:13.000Z",
+        "ageSeconds": 1,
+        "stale": false,
+        "corrected": false,
+        "source": "simulated"
       },
       "stale": false,
       "change": {
-        "kind": "none", "pctSincePrev": "+0.13", "zScore": 0.2,
-        "events": [], "confidence": "high", "attention": 0.2,
+        "kind": "none",
+        "pctSincePrev": "+0.13",
+        "zScore": 0.2,
+        "events": [],
+        "confidence": "high",
+        "attention": 0.2,
+        "sensitivity": "normal",
         "why": "No meaningful change."
       }
     }

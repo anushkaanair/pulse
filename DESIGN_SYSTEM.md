@@ -65,7 +65,11 @@ Do not use a generic indigo/violet SaaS gradient anywhere. Palette:
 ## The two zones (from IMPLEMENTATION_PLAN.md §9 step 5)
 
 **Zone 1 — "Since you last looked"** (top, most visual weight)
-- Horizontal-scrolling or stacked rank-ordered cards, highest `attention`
+- **The digest line comes first**, above everything: `digest` from the API,
+  set at 20px medium weight in the ink color, max ~2 lines. This is the one
+  sentence a returning user reads. Below it, one muted 12px line: *"You were
+  away 2h · 3 of 15 worth a look"* from `baseline.awaySeconds` and `summary`.
+- Then horizontal-scrolling or stacked rank-ordered cards, highest `attention`
   first. Each card: symbol, one-line `why` string (this is the product —
   make it typographically prominent, not a caption), the z-score/event
   badge in the amber accent, a "Mark as seen" affordance per-card *or* one
@@ -82,7 +86,12 @@ Do not use a generic indigo/violet SaaS gradient anywhere. Palette:
 
 **Zone 2 — full list** (below, lower visual weight, denser)
 - Compact rows, not cards: symbol, price (tabular mono), day change %,
-  stale badge if applicable, remove action on hover. This is the "boring"
+  stale badge if applicable, a **sensitivity control** (three-segment toggle
+  quiet · normal · loud — 12px, ink at 60%, the active segment in ink at
+  100%; *no* accent color here, it's a setting not a signal), remove action
+  on hover. On a `ChangeCard`, a non-normal sensitivity shows as a tiny
+  outlined chip ("quiet" / "loud") next to the symbol — so the user can see
+  *why* something small surfaced or something big didn't. This is the "boring"
   view and should look boring on purpose — the contrast with Zone 1's
   prominence is what makes Zone 1 read as smart.
 
