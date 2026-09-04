@@ -29,6 +29,7 @@ export default function WatchlistPage() {
   const [editing, setEditing] = useState(false);
   const [symbolsText, setSymbolsText] = useState("");
   const [conflict, setConflict] = useState<{ theirs: WatchlistItem[]; mine: string[]; version: number }>();
+  const [sort, setSort] = useState<{ key: "symbol" | "price" | "change" | "volume"; dir: 1 | -1 }>({ key: "symbol", dir: 1 });
 
   useEffect(() => {
     let cancelled = false;
@@ -70,14 +71,31 @@ export default function WatchlistPage() {
   if (!watchlist || !changes) return <main className="mx-auto max-w-[880px] px-4 py-12 text-sm text-[var(--muted)]">Loading your catch-up…</main>;
   const meaningful = changes.items.filter((item) => item.change.kind !== "none");
 
+  const changeBySymbol = new Map(changes.items.map((c) => [c.symbol, c.change]));
+  const sortVal = (it: WatchlistItem, key: typeof sort.key) =>
+    key === "symbol" ? it.symbol
+    : key === "price" ? Number(it.quote?.price ?? 0)
+    : key === "volume" ? (it.quote?.volume ?? 0)
+    : Number(changeBySymbol.get(it.symbol)?.pctSincePrev ?? 0); // change
+  const sortedItems = [...watchlist.items].sort((a, b) => {
+    const va = sortVal(a, sort.key), vb = sortVal(b, sort.key);
+    if (va < vb) return -1 * sort.dir;
+    if (va > vb) return 1 * sort.dir;
+    return 0;
+  });
+  const toggleSort = (key: typeof sort.key) => setSort((s) => s.key === key ? { key, dir: (s.dir * -1) as 1 | -1 } : { key, dir: key === "symbol" ? 1 : -1 });
+  const arrow = (key: typeof sort.key) => sort.key === key ? (sort.dir === 1 ? " ↑" : " ↓") : "";
+
   return <main className="min-h-screen"><FeedStatusBar status={changes.feed.status} lagSeconds={changes.feed.lagSeconds} /><div className="mx-auto max-w-[880px] px-4 py-8 sm:px-8"><header className="flex items-center justify-between"><div><Link href="/" className="text-xs text-[var(--muted)] underline underline-offset-4 hover:text-[var(--ink)]">Watchlists</Link><h1 className="mt-2 text-[28px] font-medium tracking-tight">{watchlist.name}</h1><Link href={`/w/${id}/history`} className="mt-1 inline-block text-xs text-[var(--muted)] underline underline-offset-4 hover:text-[var(--ink)]">History</Link></div><button onClick={markSeen} disabled={marking} className="border border-[var(--ink)] px-3 py-2 text-sm disabled:opacity-40 enabled:hover:bg-black/5">{marking ? "Marking…" : "Mark as seen"}</button></header>
     <section className="mt-8"><p className="text-xs tracking-[0.16em] text-[var(--amber)] uppercase">Since you last looked</p><p className="mt-3 max-w-3xl text-xl font-medium leading-7">{changes.digest}</p><p className="mt-2 text-xs text-[var(--muted)]">{changes.baseline.kind === "first-visit" ? "First visit · this becomes your baseline." : `You were away ${away(changes.baseline.awaySeconds)} · ${changes.summary.meaningful} of ${changes.summary.total} worth a look`}</p>
       {changes.summary.meaningful === 0 ? <p className="mt-6 text-sm text-[var(--muted)]">Nothing meaningful changed since {changes.baseline.takenAt ? new Date(changes.baseline.takenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "your last visit"}.</p> : <div className="mt-6 grid gap-3 md:grid-cols-2">{meaningful.map((item) => <ChangeCard key={item.symbol} item={item} />)}</div>}</section>
-    <section className="mt-12"><div className="flex items-baseline justify-between gap-4"><div><p className="text-xs tracking-[0.16em] text-[var(--muted)] uppercase">Full list</p><h2 className="mt-2 text-xl font-medium">Everything you track</h2></div><div className="flex items-center gap-4"><span className="text-xs text-[var(--muted)]">{watchlist.items.length} symbols</span><AddSymbol watchlistId={id} onAdded={setWatchlist} /></div></div><button onClick={() => { setEditing((value) => !value); setSymbolsText(watchlist.items.map((item) => item.symbol).join(", ")); }} className="mt-4 text-xs text-[var(--muted)] underline underline-offset-4 hover:text-[var(--ink)]">{editing ? "Close bulk edit" : "Bulk edit symbols"}</button>{editing ? <div className="mt-3 flex gap-2"><input value={symbolsText} onChange={(event) => setSymbolsText(event.target.value)} aria-label="Symbols, comma separated" className="min-w-0 flex-1 border-b border-[var(--line)] bg-transparent py-2 text-sm outline-none" /><button onClick={() => void saveBulk()} className="border border-[var(--ink)] px-3 py-2 text-sm hover:bg-black/5">Save list</button></div> : null}{watchlist.items.length === 0 ? <p className="mt-5 border-y border-[var(--line)] py-6 text-sm text-[var(--muted)]">This watchlist is empty. Add a symbol to start a baseline.</p> : watchlist.items.length > VIRTUALIZE_ABOVE ? (
-      <VirtualizedRows items={watchlist.items} changes={changes} sparklines={sparklines} id={id} refreshWatchlist={refreshWatchlist} />
+    <section className="mt-12"><div className="flex items-baseline justify-between gap-4"><div><p className="text-xs tracking-[0.16em] text-[var(--muted)] uppercase">Full list</p><h2 className="mt-2 text-xl font-medium">Everything you track</h2></div><div className="flex items-center gap-4"><span className="text-xs text-[var(--muted)]">{watchlist.items.length} symbols</span><AddSymbol watchlistId={id} onAdded={setWatchlist} /></div></div><button onClick={() => { setEditing((value) => !value); setSymbolsText(watchlist.items.map((item) => item.symbol).join(", ")); }} className="mt-4 text-xs text-[var(--muted)] underline underline-offset-4 hover:text-[var(--ink)]">{editing ? "Close bulk edit" : "Bulk edit symbols"}</button>{editing ? <div className="mt-3 flex gap-2"><input value={symbolsText} onChange={(event) => setSymbolsText(event.target.value)} aria-label="Symbols, comma separated" className="min-w-0 flex-1 border-b border-[var(--line)] bg-transparent py-2 text-sm outline-none" /><button onClick={() => void saveBulk()} className="border border-[var(--ink)] px-3 py-2 text-sm hover:bg-black/5">Save list</button></div> : null}{watchlist.items.length === 0 ? <p className="mt-5 border-y border-[var(--line)] py-6 text-sm text-[var(--muted)]">This watchlist is empty. Add a symbol to start a baseline.</p> : <>
+      <div className="mt-5 flex gap-4 text-[11px] tracking-wide text-[var(--muted)] uppercase">Sort:{(["symbol", "price", "change", "volume"] as const).map((k) => <button key={k} onClick={() => toggleSort(k)} className={`hover:text-[var(--ink)] ${sort.key === k ? "text-[var(--ink)]" : ""}`}>{k}{arrow(k)}</button>)}</div>
+      {watchlist.items.length > VIRTUALIZE_ABOVE ? (
+      <VirtualizedRows items={sortedItems} changes={changes} sparklines={sparklines} id={id} refreshWatchlist={refreshWatchlist} />
     ) : (
-      <ul className="mt-5 divide-y divide-[var(--line)] border-y border-[var(--line)]">
-        {watchlist.items.map((item) => (
+      <ul className="mt-3 divide-y divide-[var(--line)] border-y border-[var(--line)]">
+        {sortedItems.map((item) => (
           <li key={item.symbol}>
             <WatchlistRow
               item={item}
@@ -89,7 +107,7 @@ export default function WatchlistPage() {
           </li>
         ))}
       </ul>
-    )}</section>
+    )}</>}</section>
   </div>{conflict ? <ConflictModal theirs={conflict.theirs} mine={conflict.mine} onKeepMine={() => void saveBulk(conflict.mine, conflict.version)} onKeepTheirs={() => { setWatchlist((current) => current ? { ...current, version: conflict.version, items: conflict.theirs } : current); setConflict(undefined); setEditing(false); }} onMerge={() => void saveBulk([...new Set([...conflict.theirs.map((item) => item.symbol), ...conflict.mine])], conflict.version)} /> : null}</main>;
 }
 

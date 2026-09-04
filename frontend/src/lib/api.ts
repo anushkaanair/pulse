@@ -9,6 +9,7 @@ export class ApiRequestError extends Error {
 }
 export interface Quote {
   symbol: string; price: string; prevClose: string | null; dayHigh: string | null; dayLow: string | null;
+  weekHigh: string | null; weekLow: string | null;
   volume: number; asOf: string; receivedAt: string; ageSeconds: number; stale: boolean; corrected: boolean; source: string;
 }
 export interface SymbolSearchResult { symbol: string; name: string; exchange: string }

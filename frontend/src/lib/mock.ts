@@ -9,7 +9,7 @@ const symbols: SymbolSearchResult[] = [
   { symbol: "IDEA", name: "Vodafone Idea", exchange: "NSE" },
   { symbol: "HDFCBANK", name: "HDFC Bank", exchange: "NSE" },
 ];
-const quote = (symbol: string, price: string, stale = false): Quote => ({ symbol, price, prevClose: price, dayHigh: price, dayLow: price, volume: 1234000, asOf: now, receivedAt: now, ageSeconds: stale ? 212 : 1, stale, corrected: false, source: "simulated" });
+const quote = (symbol: string, price: string, stale = false): Quote => ({ symbol, price, prevClose: price, dayHigh: price, dayLow: price, weekHigh: (Number(price) * 1.3).toFixed(4), weekLow: (Number(price) * 0.75).toFixed(4), volume: 1234000, asOf: now, receivedAt: now, ageSeconds: stale ? 212 : 1, stale, corrected: false, source: "simulated" });
 const item = (symbol: string, price: string, stale = false): WatchlistItem => ({ symbol, name: symbols.find((entry) => entry.symbol === symbol)?.name ?? symbol, sensitivity: "normal", quote: quote(symbol, price, stale), stale });
 let current: Watchlist = { id: "demo-watchlist", name: "Market watch", version: 1, items: [item("TCS", "3812.4500"), item("SUZLON", "71.2000"), item("RELIANCE", "2951.0000"), item("ZOMATO", "241.3000"), item("IDEA", "13.4500", true), item("HDFCBANK", "1642.1000")] };
 let faults: FaultConfig = {};
