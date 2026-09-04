@@ -428,3 +428,42 @@ centerpiece), Interpretation 2 (no angle yet — couldn't have one), Edge cases
 | **H22** | **Safety-net submit** (1,000-cap). | — |
 | H22–H28 | Scale check (500 symbols / 50 users), polish `why` strings, prune. | Visual polish, empty-state copy, responsive. |
 | H28–H30 | Final fresh-clone test, final submit with buffer. | — |
+
+## 11. Additions after feature review (logged in DECISIONS.md)
+
+**C. Away-aware significance (correctness fix).** σ from history is per-tick;
+the move spans `n` ticks since the checkpoint. `z = r / (σ_tick · √n)`,
+`n = max(1, elapsedMs / TICK_MS)`, capped at `HISTORY_WINDOW` so multi-day
+absences still flag genuinely large moves. Unit-tested: same 2% move → high z
+at 5 min, low z at 5 days for the same stock.
+
+**A. Catch-me-up digest.** `changes` response gains
+`digest: string` — one templated sentence built from `summary` + the top 3
+`why` strings + a "N others: nothing meaningful" tail. Baseline adds
+`awaySeconds`. No new endpoint. Frontend renders it as the first line of
+Zone 1, above the cards.
+
+**B. Per-symbol sensitivity.**
+```sql
+ALTER TABLE watchlist_items ADD COLUMN sensitivity text NOT NULL DEFAULT 'normal'
+  CHECK (sensitivity IN ('quiet','normal','loud'));
+```
+Z multiplier: quiet ×1.75, normal ×1.0, loud ×0.6 (env-configurable).
+```
+PATCH /api/watchlists/:id/items/:symbol   body { sensitivity }
+  200 { id, version, items:[...] }   -- items now carry `sensitivity`
+```
+`ChangeItem.change` gains `sensitivity` so the UI can show *why* a small move
+surfaced ("loud") or a big one didn't ("quiet"). Bumps `version`.
+
+**Designed for, not built (say so in the pitch):** notifications on
+meaningful change while away (engine output is the payload; checkpoint
+dedup means no pings for things already seen); visit timeline from
+`snapshots`.
+
+### Roadmap deltas
+- H6–H9 Claude: engine includes C (√n scaling) and B (multiplier). Codex:
+  digest line in Zone 1 on mocks.
+- H16–H20 Claude: A (`digest`), `PATCH sensitivity`, migration 003. Codex:
+  sensitivity control in the full-list row + "quiet/loud" chip on cards.
+- Everything else unchanged. Safety-net submit stays at H22.

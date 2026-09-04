@@ -37,3 +37,13 @@ why this one.
 **What:** `X-User-Id` header.
 **Alternatives:** JWT/session auth.
 **Why:** Orthogonal to what's graded. Three hours that prove nothing about the diff engine.
+
+## Significance scales with time away
+**What:** `z = r / (σ_tick · √n)`, n = ticks since checkpoint, capped.
+**Alternatives:** Per-tick σ regardless of elapsed time (the first draft).
+**Why:** A 2% move over five days is unremarkable for a stock where 2% in five minutes is not. Without this the engine over-flags long absences — exactly the case the brief cares about.
+
+## Catch-me-up digest and per-symbol sensitivity — the only features added
+**What:** One generated summary sentence; a quiet/normal/loud setting per symbol that scales the z threshold.
+**Alternatives:** Alerts with absolute thresholds, notifications, visit timeline, sharing.
+**Why:** Both change what the core surfaces rather than adding screens; both answer a real reason people stop using watchlists (too much noise). The rest is either infra we can't finish or padding.
