@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useEffect, useState } from "react";
+import { MarketRail } from "@/components/MarketRail";
 import { api, ApiRequestError, setUserId, switchUser, type WatchlistSummary } from "@/lib/api";
 
 function ErrorText({ error }: { error: unknown }) {
@@ -10,12 +11,6 @@ function ErrorText({ error }: { error: unknown }) {
   const message = error instanceof ApiRequestError ? `${error.response.error} (${error.response.code})` : "Could not load watchlists.";
   return <p className="mt-4 text-sm text-[var(--red)]">{message}</p>;
 }
-
-const EXPLAINERS: [string, string, string][] = [
-  ["01", "It remembers exactly", "Every visit saves a precise snapshot of the prices you were shown — not a timestamp — so a feed that later rewrites the past can't rewrite what you saw."],
-  ["02", "Unusual, not just big", "A move is scored against that stock's own trailing volatility, and against what its sector did over the same window — a move fully explained by the sector isn't news."],
-  ["03", "Honest when unsure", "Delayed, duplicated and corrected ticks are expected. Stale data is labelled stale and never quietly presented as fresh — and a correction to something already shown is a visible retraction, never a silent delete."],
-];
 
 export default function WatchlistsPage() {
   // useSearchParams needs a Suspense boundary at the page level (Next.js
@@ -37,6 +32,10 @@ function WatchlistsPageInner() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<unknown>();
+  // Gates rendering until the homepage-entry check below resolves, so a
+  // direct/bookmarked hit on /app never flashes the dashboard before the
+  // redirect fires.
+  const [entered, setEntered] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -67,8 +66,26 @@ function WatchlistsPageInner() {
     // via devtools (Chrome's paste guard makes that needlessly fiddly for
     // what should be a one-line dev convenience). Strips the param from
     // the URL immediately so it isn't accidentally re-applied or shared.
+    // It also intentionally bypasses the homepage-entry check below — a
+    // shared reviewer link should open straight into the dashboard.
     const as = searchParams.get("as");
-    if (as) { setUserId(as); router.replace("/app"); }
+    if (as) {
+      setUserId(as); router.replace("/app"); setEntered(true);
+      // Persist the flag too — router.replace strips the param, which
+      // re-runs this effect on the next render with `as` gone, and the
+      // homepage-entry check below would otherwise fire on that pass and
+      // bounce a fresh reviewer link straight back to "/".
+      try { sessionStorage.setItem("pulse-entered", "1"); } catch { /* private mode etc. */ }
+      void load(); return;
+    }
+
+    // A direct or bookmarked hit on /app, without ever having gone through
+    // "/" first (in this browser tab), bounces back to the homepage — so
+    // "Get started" stays the one real front door into the product.
+    let sawHomepage = false;
+    try { sawHomepage = sessionStorage.getItem("pulse-entered") === "1"; } catch { sawHomepage = true; }
+    if (!sawHomepage) { router.replace("/"); return; }
+    setEntered(true);
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
@@ -84,7 +101,11 @@ function WatchlistsPageInner() {
 
   const totalTracked = lists.reduce((n, l) => n + l.itemCount, 0);
 
+  if (!entered) return null;
+
   return (
+    <>
+    <MarketRail />
     <main className="mx-auto max-w-[1180px] px-4 pt-9 pb-12">
       <header className="rise flex flex-wrap items-start justify-between gap-6">
         <div>
@@ -97,7 +118,7 @@ function WatchlistsPageInner() {
         <div className="flex items-center gap-4 pt-1">
           {lists.length > 0 ? (
             <span className="text-xs text-[var(--muted)]">
-              <span className="numbers font-semibold text-[var(--ink)]">{lists.length}</span> {lists.length === 1 ? "list" : "lists"} · <span className="numbers font-semibold text-[var(--ink)]">{totalTracked}</span> symbols
+              <span className="numbers font-semibold text-[var(--ink)]">{lists.length}</span> {lists.length === 1 ? "list" : "lists"} · <span className="numbers font-semibold text-[var(--ink)]">{totalTracked}</span> stocks
             </span>
           ) : null}
           <button onClick={() => { switchUser(); void load(); }} className="text-xs text-[var(--muted)] underline underline-offset-4 hover:text-[var(--ink)]">Switch user</button>
@@ -113,7 +134,7 @@ function WatchlistsPageInner() {
           {!loading && lists.length === 0 ? (
             <div className="mt-4 rounded-2xl border border-[var(--line)] p-14 text-center" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
               <p className="m-0 text-[15px] font-medium">No watchlist yet.</p>
-              <p className="mx-auto mt-1.5 max-w-[320px] text-sm leading-relaxed text-[var(--muted)]">Create one and add the symbols you actually check in on. Your first visit becomes the baseline.</p>
+              <p className="mx-auto mt-1.5 max-w-[320px] text-sm leading-relaxed text-[var(--muted)]">Create one and add the stocks you actually check in on. Your first visit becomes the baseline.</p>
             </div>
           ) : null}
 
@@ -127,7 +148,7 @@ function WatchlistsPageInner() {
                     <span className="flex w-full items-start justify-between gap-3">
                       <span className="min-w-0">
                         <span className="block text-[15px] font-semibold tracking-tight">{list.name}</span>
-                        <span className="mt-0.5 block text-[11.5px] text-[var(--muted)]">{list.itemCount} {list.itemCount === 1 ? "symbol" : "symbols"} · updated {new Date(list.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                        <span className="mt-0.5 block text-[11.5px] text-[var(--muted)]">{list.itemCount} {list.itemCount === 1 ? "stock" : "stocks"} · updated {new Date(list.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                       </span>
                       {pv ? (
                         <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${pv.meaningful > 0 ? "bg-[var(--amber)]/15 text-[var(--amber)]" : "bg-[var(--green)]/12 text-[var(--green)]"}`}>
@@ -142,7 +163,7 @@ function WatchlistsPageInner() {
                           <span style={{ color: m.down ? "var(--red)" : "var(--green)" }}>{m.pct}%</span>
                         </span>
                       )) : (
-                        <span className="text-[11px] text-[var(--muted)]">{list.itemCount === 0 ? "No symbols yet" : pv ? "Nothing moved since your baseline" : "Loading movement…"}</span>
+                        <span className="text-[11px] text-[var(--muted)]">{list.itemCount === 0 ? "No stocks yet" : pv ? "Nothing moved since your baseline" : "Loading movement…"}</span>
                       )}
                     </span>
                   </Link>
@@ -152,19 +173,6 @@ function WatchlistsPageInner() {
             </ul>
           ) : null}
           <ErrorText error={error} />
-
-          <section className="mt-9">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">How this decides what matters</h2>
-            <div className="mt-4 grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))" }}>
-              {EXPLAINERS.map(([step, title, body]) => (
-                <div key={step} className="rounded-2xl border border-[var(--line)] p-4" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
-                  <p className="numbers m-0 text-[11px] font-semibold" style={{ color: "var(--amber)" }}>{step}</p>
-                  <p className="mt-2 mb-0 text-[13.5px] font-semibold tracking-tight">{title}</p>
-                  <p className="mt-1.5 mb-0 text-xs leading-relaxed text-[var(--muted)]">{body}</p>
-                </div>
-              ))}
-            </div>
-          </section>
         </div>
 
         <aside className="flex flex-col gap-4">
@@ -180,26 +188,9 @@ function WatchlistsPageInner() {
             </button>
             <p className="mt-2.5 mb-0 text-[11px] leading-relaxed text-[var(--muted)]">Your first visit to a new list becomes its baseline — nothing is reported as a change until then.</p>
           </form>
-
-          <div className="rounded-2xl border border-[var(--line)] p-5" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Reading a change</h2>
-            <dl className="mt-3.5 flex flex-col gap-3 text-xs">
-              <div>
-                <dt className="numbers font-semibold" style={{ color: "var(--amber)" }}>2.8σ</dt>
-                <dd className="mt-0.5 leading-relaxed text-[var(--muted)]">How far the move sits from that stock&apos;s own normal, once the sector&apos;s own move is subtracted out. Past ~2σ it&apos;s genuinely unusual.</dd>
-              </div>
-              <div className="border-t border-[var(--line)] pt-3">
-                <dt className="font-semibold text-[var(--ink-2)]">Q · N · L</dt>
-                <dd className="mt-0.5 leading-relaxed text-[var(--muted)]">Per-symbol sensitivity. Quiet needs a bigger move to surface; Loud needs less.</dd>
-              </div>
-              <div className="border-t border-[var(--line)] pt-3">
-                <dt className="font-semibold text-[var(--ink-2)]">Stale badge</dt>
-                <dd className="mt-0.5 leading-relaxed text-[var(--muted)]">The quote is older than it should be. Shown, never hidden.</dd>
-              </div>
-            </dl>
-          </div>
         </aside>
       </section>
     </main>
+    </>
   );
 }

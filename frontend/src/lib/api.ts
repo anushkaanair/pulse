@@ -33,6 +33,10 @@ export interface ChangeItem {
     // recorded event; a number = how long it was quiet before this one;
     // undefined = not applicable this poll.
     quietForMs?: number | null;
+    // Set only alongside a VOLUME_SPIKE event — last tick's volume vs this
+    // symbol's own trailing average. The baseline a raw volume number needs
+    // to actually mean something.
+    volumeRatio?: number;
   };
 }
 export interface Retraction { symbol: string; name: string; previousZ: number | null }

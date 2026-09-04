@@ -4,6 +4,7 @@ import { expect, test } from "@playwright/test";
 // seeds one existing watchlist ("Market watch") with 6 symbols, 3 of them
 // meaningful, so the happy path is reachable with zero setup.
 test("open a watchlist and see the ranked meaningful changes", async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem("pulse-entered", "1"));
   await page.goto("/app");
   await expect(page.getByRole("heading", { name: "What deserves attention" })).toBeVisible();
 
@@ -20,7 +21,12 @@ test("open a watchlist and see the ranked meaningful changes", async ({ page }) 
   await tcsCard.click();
   await expect(tcsCard.getByText(/unusual for TCS/)).toBeVisible();
 
-  // Full list shows all 6 symbols, including ones with kind:"none".
-  await expect(page.getByText("6 symbols")).toBeVisible();
-  await expect(page.getByText("HDFCBANK")).toBeVisible();
+  // Full list shows all 6 symbols, including ones with kind:"none" — the
+  // watchlist-summary card's own tracked count is the stable place to
+  // check this now that the page header no longer repeats the count.
+  await expect(page.getByText("Watchlist summary").locator("..").getByText("6")).toBeVisible();
+  // Scoped to the tracked-stocks list: the symbol also appears in the live
+  // market rail's ticker-tape (twice, for the seamless loop), so a bare
+  // getByText would match multiple nodes.
+  await expect(page.getByRole("list").getByText("HDFCBANK")).toBeVisible();
 });

@@ -68,7 +68,12 @@ export function WatchlistRow({
       {/* 3. Metrics (Volume, Range, Sparkline) - full width on mobile */}
       <div className="col-span-2 flex items-center justify-between gap-4 md:contents">
         <div className="md:w-16 md:text-right hidden md:block">
-           {item.quote ? <span className="numbers text-[12.5px] text-[var(--ink-2)]" title="1D volume">{compactVolume(item.quote.volume)}</span> : <span className="text-xs text-[var(--muted)]">—</span>}
+           {item.quote ? (
+             <span className="numbers text-[12.5px] text-[var(--ink-2)]" title="1D volume">
+               {compactVolume(item.quote.volume)}
+               {change?.volumeRatio ? <span className="ml-1 text-[10.5px] font-semibold" style={{ color: "var(--amber)" }} title="vs this stock's own trailing average tick volume">{change.volumeRatio.toFixed(1)}x avg</span> : null}
+             </span>
+           ) : <span className="text-xs text-[var(--muted)]">—</span>}
         </div>
         <div className="flex-1 max-w-[120px] hidden md:block">
            <RangeBar low={item.quote?.weekLow ?? null} high={item.quote?.weekHigh ?? null} price={item.quote?.price} />

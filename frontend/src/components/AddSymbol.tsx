@@ -8,14 +8,14 @@ export function AddSymbol({ watchlistId, onAdded }: { watchlistId: string; onAdd
   const [results, setResults] = useState<Awaited<ReturnType<typeof api.searchSymbols>>>([]);
   const [error, setError] = useState<string>();
 
-  useEffect(() => { if (!query.trim()) { setResults([]); return; } const timer = window.setTimeout(() => { void api.searchSymbols(query).then(setResults).catch(() => setError("Could not search symbols.")); }, 200); return () => window.clearTimeout(timer); }, [query]);
-  async function add(symbol: string) { try { onAdded(await api.addItem(watchlistId, symbol)); setQuery(""); setResults([]); setError(undefined); } catch (cause) { setError(cause instanceof ApiRequestError && cause.response.code === "UNKNOWN_SYMBOL" ? "That symbol is not available." : "Could not add this symbol."); } }
+  useEffect(() => { if (!query.trim()) { setResults([]); return; } const timer = window.setTimeout(() => { void api.searchSymbols(query).then(setResults).catch(() => setError("Could not search stocks.")); }, 200); return () => window.clearTimeout(timer); }, [query]);
+  async function add(symbol: string) { try { onAdded(await api.addItem(watchlistId, symbol)); setQuery(""); setResults([]); setError(undefined); } catch (cause) { setError(cause instanceof ApiRequestError && cause.response.code === "UNKNOWN_SYMBOL" ? "That stock is not available." : "Could not add this stock."); } }
 
   return (
     <div className="relative">
-      <label className="sr-only" htmlFor="add-symbol">Add a symbol</label>
+      <label className="sr-only" htmlFor="add-symbol">Add a stock</label>
       <input
-        id="add-symbol" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Add a symbol"
+        id="add-symbol" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Add a stock"
         className="w-full rounded-xl border border-[var(--line-2)] bg-[var(--ground-2)] px-3.5 py-2.5 text-[13px] outline-none transition-colors placeholder:text-[var(--muted)] focus:border-[var(--amber)]"
       />
       {error ? <p className="mt-1 text-xs text-[var(--red)]">{error}</p> : null}

@@ -184,4 +184,23 @@ describe("buildDigest", () => {
   it("says so when nothing changed", () => {
     expect(buildDigest([], "checkpoint", 3600_000)).toMatch(/nothing meaningful changed/);
   });
+  // sigma scaled realistically (per-tick, ~2%/day daily vol — see
+  // simulatedProvider.ts's own sigmaDaily/sqrt(ticksPerDay) derivation) so
+  // the isSignificant() n-scaling (sigma * sqrt(elapsed ticks)) produces a
+  // sane real-world bar: single-digit % over minutes, ~15%+ over 3 days.
+  const REALISTIC_SIGMA = 0.00013;
+  it("leads with the count, not the list, after a multi-day gap with a real backlog", () => {
+    const snap = { A: seen(100), B: seen(100), C: seen(100), D: seen(100) };
+    const st = new Map([...stats("A", REALISTIC_SIGMA), ...stats("B", REALISTIC_SIGMA), ...stats("C", REALISTIC_SIGMA), ...stats("D", REALISTIC_SIGMA)]);
+    const results = computeChanges(snap, 3 * 86_400_000, [item("A", 122), item("B", 80), item("C", 125), item("D", 78)], st, cfg);
+    const d = buildDigest(results, "checkpoint", 3 * 86_400_000);
+    expect(d).toMatch(/^3 days ago — 4 changes while you were away\. Top 3: /);
+  });
+  it("keeps the short-gap list-first phrasing for a same-day reopen even with several changes", () => {
+    const snap = { A: seen(100), B: seen(100), C: seen(100), D: seen(100) };
+    const st = new Map([...stats("A", REALISTIC_SIGMA), ...stats("B", REALISTIC_SIGMA), ...stats("C", REALISTIC_SIGMA), ...stats("D", REALISTIC_SIGMA)]);
+    const results = computeChanges(snap, 600_000, [item("A", 103), item("B", 97), item("C", 104), item("D", 96)], st, cfg);
+    const d = buildDigest(results, "checkpoint", 600_000);
+    expect(d).toMatch(/^Since 10 min ago: 4 things worth a look — /);
+  });
 });

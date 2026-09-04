@@ -5,19 +5,21 @@ import { expect, test } from "@playwright/test";
 // is nothing. This is the mock-mode equivalent of the backend's own
 // checkpoint-exactness torture-test assertion.
 test("marking as seen clears the meaningful changes on the next load", async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem("pulse-entered", "1"));
   await page.goto("/app");
   await page.getByRole("link", { name: /Market watch/ }).click();
 
   await expect(page.getByText(/things worth a look/)).toBeVisible();
   await expect(page.locator("article", { hasText: "TCS" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Mark as seen" }).click();
+  await page.getByRole("button", { name: "Reset baseline", exact: true }).click();
 
   await expect(page.getByText("Nothing meaningful changed since you last looked.")).toBeVisible();
   await expect(page.locator("article", { hasText: "TCS" })).toHaveCount(0);
 });
 
 test("first visit shows the baseline message, not a fabricated change", async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem("pulse-entered", "1"));
   await page.goto("/app");
   await page.getByPlaceholder("e.g. Long term").fill("Fresh List");
   await page.getByRole("button", { name: "Create watchlist" }).click();

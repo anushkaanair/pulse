@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { AddSymbol } from "@/components/AddSymbol";
 import { AttentionDeck } from "@/components/AttentionDeck";
 import { ConflictModal } from "@/components/ConflictModal";
 import { FeedStatusBar } from "@/components/FeedStatusBar";
+import { InvestmentsCard } from "@/components/InvestmentsCard";
+import { MarketRail } from "@/components/MarketRail";
 import { MarketTrends } from "@/components/MarketTrends";
 import { WatchlistRow } from "@/components/WatchlistRow";
 import { api, ApiRequestError, type ChangesResponse, type ConflictResponse, type Sensitivity, type Sparklines, type Watchlist, type WatchlistItem } from "@/lib/api";
@@ -20,9 +22,16 @@ const VIRTUALIZE_ABOVE = 100;
 
 function away(seconds: number | null) { if (!seconds) return null; return seconds >= 3600 ? `${Math.floor(seconds / 3600)}h` : `${Math.max(1, Math.floor(seconds / 60))}m`; }
 
+const NEW_LIST_MAX = 18;
+
 export default function WatchlistPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const [watchlist, setWatchlist] = useState<Watchlist>();
+  const [newListOpen, setNewListOpen] = useState(false);
+  const [newListName, setNewListName] = useState("");
+  const [newListBusy, setNewListBusy] = useState(false);
+  const [newListError, setNewListError] = useState<string>();
   const [changes, setChanges] = useState<ChangesResponse>();
   const [sparklines, setSparklines] = useState<Sparklines>({});
   const [error, setError] = useState<unknown>();
@@ -66,6 +75,20 @@ export default function WatchlistPage() {
   const refreshWatchlist = async (work: () => Promise<Watchlist>) => { try { setWatchlist(await work()); } catch (cause) { setError(cause); } };
   const markSeen = async () => { if (!changes) return; setMarking(true); try { await api.checkpoint(id, changes.snapshotId); const latest = await api.changes(id); setChanges(latest.data ?? undefined); } catch (cause) { setError(cause); } finally { setMarking(false); } };
   const requestedSymbols = () => [...new Set(symbolsText.split(",").map((symbol) => symbol.trim().toUpperCase()).filter(Boolean))];
+  const createNewList = async () => {
+    const trimmed = newListName.trim();
+    if (!trimmed) return;
+    setNewListBusy(true); setNewListError(undefined);
+    try {
+      const list = await api.createWatchlist(trimmed);
+      // A brand-new list has nothing to show yet — its own page's
+      // first-visit baseline message is the correct landing spot, not
+      // back to the /app list-of-lists.
+      router.push(`/w/${list.id}`);
+    } catch (cause) {
+      setNewListError(cause instanceof ApiRequestError ? `${cause.response.error} (${cause.response.code})` : "Could not create this watchlist.");
+    } finally { setNewListBusy(false); }
+  };
   const saveBulk = async (symbols = requestedSymbols(), version = watchlist!.version) => { try { setWatchlist(await api.replaceItems(id, symbols, version)); setEditing(false); setConflict(undefined); } catch (cause) { const current = cause instanceof ApiRequestError ? (cause.response as unknown as Partial<ConflictResponse>).current : undefined; if (current) setConflict({ theirs: current.items, mine: symbols, version: current.version }); else setError(cause); } };
 
   if (error) { const message = error instanceof ApiRequestError ? `${error.response.error} (${error.response.code})` : "Could not load this watchlist."; return <main className="mx-auto max-w-[880px] px-4 py-12"><Link href="/app" className="text-sm underline underline-offset-4 hover:text-[var(--ink)]">Back to watchlists</Link><p className="mt-8 text-sm text-[var(--red)]">{message}</p></main>; }
@@ -79,6 +102,7 @@ export default function WatchlistPage() {
   // falls back to "largest recent movement" filler when nothing is
   // meaningful — "nothing meaningful changed" stays a real empty state.
   const meaningful = changes.items.filter((item) => item.change.kind !== "none");
+  const lowConfidence = changes.items.filter((item) => item.change.confidence === "low").length;
   const rankedForAttention = meaningful.slice(0, changes.attentionBudget);
   const overflow = meaningful.length - rankedForAttention.length;
 
@@ -100,16 +124,54 @@ export default function WatchlistPage() {
   return (
     <main className="min-h-screen">
       <FeedStatusBar status={changes.feed.status} lagSeconds={changes.feed.lagSeconds} />
+      <MarketRail items={changes.items} />
       <div className="mx-auto max-w-7xl px-4 pt-3">
-        <Link href="/app" className="text-sm text-[var(--muted)] hover:text-[var(--ink)] underline-offset-4 hover:underline">← Back to watchlists</Link>
-        <div className="mt-0.5 flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <h1 className="text-xl font-semibold tracking-tight">{watchlist.name}</h1>
-          {changes.summary.meaningful > 0
-            ? <span className="rounded-full bg-[var(--amber)]/15 px-2.5 py-0.5 text-[11px] font-medium text-[var(--amber)]">{changes.summary.meaningful} worth a look</span>
-            : <span className="rounded-full bg-[var(--green)]/15 px-2.5 py-0.5 text-[11px] font-medium text-[var(--green)]">Caught up</span>}
+          <button
+            type="button"
+            onClick={() => { setNewListName(""); setNewListError(undefined); setNewListOpen(true); }}
+            className="flex items-center gap-1 rounded-full border border-[var(--line-2)] px-2.5 py-1 text-[11px] font-medium text-[var(--ink-2)] transition-colors hover:border-[var(--amber)] hover:text-[var(--amber)]"
+          >
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2.5v11M2.5 8h11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
+            Watchlist
+          </button>
         </div>
-        <p className="text-xs text-[var(--muted)] mt-0.5">{watchlist.items.length} {watchlist.items.length === 1 ? "symbol" : "symbols"}</p>
       </div>
+
+      {newListOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(10,10,12,.55)" }}
+          onClick={() => !newListBusy && setNewListOpen(false)}
+        >
+          <div
+            role="dialog" aria-modal="true" aria-labelledby="new-list-title"
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-[360px] rounded-2xl border border-[var(--line)] p-6"
+            style={{ background: "var(--surface)" }}
+          >
+            <h2 id="new-list-title" className="m-0 text-[17px] font-semibold tracking-tight">Create new watchlist</h2>
+            <input
+              autoFocus value={newListName} maxLength={NEW_LIST_MAX}
+              onChange={(e) => setNewListName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && newListName.trim() && !newListBusy) void createNewList(); }}
+              placeholder="Enter watchlist name"
+              className="mt-4 w-full rounded-xl border border-[var(--line-2)] bg-[var(--ground-2)] px-3.5 py-2.5 text-sm outline-none transition-colors placeholder:text-[var(--muted)] focus:border-[var(--amber)]"
+            />
+            <p className="mt-1.5 mb-0 text-[11px] text-[var(--muted)]">Max {NEW_LIST_MAX} characters</p>
+            {newListError ? <p className="mt-2 mb-0 text-xs text-[var(--red)]">{newListError}</p> : null}
+            <button
+              onClick={() => void createNewList()}
+              disabled={!newListName.trim() || newListBusy}
+              className="mt-4 w-full rounded-xl py-2.5 text-[14px] font-semibold text-[#0b0d0e] disabled:opacity-30 transition-opacity"
+              style={{ background: "linear-gradient(140deg, var(--amber-2), var(--amber))" }}
+            >
+              {newListBusy ? "Creating…" : "Create"}
+            </button>
+          </div>
+        </div>
+      ) : null}
       <div className="mx-auto max-w-7xl px-4 pt-4 pb-8 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8">
 
         {/* Left Column - Main Content */}
@@ -135,7 +197,7 @@ export default function WatchlistPage() {
             {changes.summary.meaningful === 0 ? (
                <p className="text-sm text-[var(--muted)] bg-[var(--surface)] p-6 rounded-2xl border border-[var(--line)]">Nothing meaningful changed since {changes.baseline.takenAt ? new Date(changes.baseline.takenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "your last visit"}.</p>
             ) : (
-               <AttentionDeck items={rankedForAttention} sparklines={sparklines} topMover={changes.topMover} />
+               <AttentionDeck items={rankedForAttention} sparklines={sparklines} topMover={changes.topMover} onRefresh={markSeen} refreshing={marking} />
             )}
             {overflow > 0 ? (
               <p className="mt-2 text-xs text-[var(--muted)]">+{overflow} more meaningful, ranked lower — see the full list below.</p>
@@ -148,7 +210,7 @@ export default function WatchlistPage() {
                <h2 className="text-xl font-medium tracking-tight">All tracked stocks</h2>
                <div className="hidden sm:flex gap-2">
                  {(["symbol", "price", "change", "volume"] as const).map((k) => (
-                   <button key={k} onClick={() => toggleSort(k)} className="rounded-full border px-3.5 py-1 text-xs font-medium transition-colors" style={sort.key === k ? { borderColor: "var(--amber)", color: "var(--amber)", background: "rgba(0,190,140,.1)" } : { borderColor: "var(--line)", color: "var(--muted)" }}>{k.charAt(0).toUpperCase() + k.slice(1)}{arrow(k)}</button>
+                   <button key={k} onClick={() => toggleSort(k)} className="rounded-full border px-3.5 py-1 text-xs font-medium transition-colors" style={sort.key === k ? { borderColor: "var(--amber)", color: "var(--amber)", background: "rgba(0,190,140,.1)" } : { borderColor: "var(--line)", color: "var(--muted)" }}>{k === "symbol" ? "Stock" : k.charAt(0).toUpperCase() + k.slice(1)}{arrow(k)}</button>
                  ))}
                </div>
                <div className="ml-auto w-56">
@@ -167,7 +229,7 @@ export default function WatchlistPage() {
                </div>
 
                {watchlist.items.length === 0 ? (
-                 <p className="p-8 text-center text-sm text-[var(--muted)]">This watchlist is empty. Add a symbol to start a baseline.</p>
+                 <p className="p-8 text-center text-sm text-[var(--muted)]">This watchlist is empty. Add a stock to start a baseline.</p>
                ) : watchlist.items.length > VIRTUALIZE_ABOVE ? (
                  <VirtualizedRows items={sortedItems} changes={changes} sparklines={sparklines} id={id} refreshWatchlist={refreshWatchlist} />
                ) : (
@@ -191,28 +253,41 @@ export default function WatchlistPage() {
         {/* Right Column - Sidebar */}
         <aside className="flex flex-col gap-4">
           {/* Watchlist Summary */}
-          <div className="rounded-2xl border border-[var(--line)] p-5" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)] mb-5">Watchlist Summary</h3>
-            <div className="mb-5">
-               <p className="text-sm text-[var(--muted)] mb-1">Total Tracked</p>
-               <p className="numbers text-[30px] font-semibold tracking-tight">{watchlist.items.length}</p>
+          <div className="rounded-2xl border border-[var(--line)] p-4" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Watchlist summary</h3>
+              <p className="numbers m-0 text-[22px] font-semibold tracking-tight">{watchlist.items.length}</p>
             </div>
-            <div className="flex justify-between items-center mb-2 text-[13px]">
-               <span className="text-[var(--muted)]">Meaningful changes</span>
-               <span className="numbers font-semibold" style={{ color: changes.summary.meaningful > 0 ? "var(--amber)" : "var(--ink)" }}>{changes.summary.meaningful}</span>
+            {/* Not "Meaningful changes" here — that count is already the
+                loudest thing on the page (the digest + the pill next to the
+                title). This row covers what neither of those do: how many
+                tracked stocks don't have enough price history yet for a
+                reliable signal, so a quiet one isn't mistaken for "nothing
+                happening" rather than "not enough data yet". */}
+            <div className="mt-3 flex items-center justify-between border-t border-[var(--line)] pt-2.5 text-[12.5px]">
+               <span className="text-[var(--muted)]">Thin history</span>
+               <span className="numbers font-semibold" style={{ color: lowConfidence > 0 ? "var(--amber)" : "var(--ink)" }}>{lowConfidence}</span>
             </div>
-            <div className="flex justify-between items-center mb-6 text-[13px]">
+            <div className="mt-1.5 flex items-center justify-between text-[12.5px]">
                <span className="text-[var(--muted)]">Time away</span>
                <span className="font-medium">{changes.baseline.kind === "first-visit" ? "First visit" : (away(changes.baseline.awaySeconds) ?? "—")}</span>
             </div>
+            {/* Resets your baseline to right now — a fresh reference point
+                for "what changed since" on your next visit. Labeled by what
+                it actually does, not "Refresh" (which reads like it's
+                needed to see fresh data — it isn't; the page already polls
+                on its own). */}
             <button
               onClick={markSeen} disabled={marking}
-              className="w-full rounded-xl py-2.5 text-[13px] font-semibold text-[#0b0d0e] disabled:opacity-40 transition-opacity"
+              title="Resets your baseline to the current prices — future visits compare against this moment"
+              className="mt-3 w-full rounded-xl py-2 text-[12.5px] font-semibold text-[#0b0d0e] disabled:opacity-40 transition-opacity"
               style={{ background: "linear-gradient(140deg, var(--amber-2), var(--amber))" }}
             >
-               {marking ? "Marking…" : "Mark as seen"}
+               {marking ? "Resetting…" : "Reset baseline"}
             </button>
           </div>
+
+          <InvestmentsCard items={changes.items} />
 
           <MarketTrends items={changes.items} />
 
@@ -227,12 +302,12 @@ export default function WatchlistPage() {
               <div className="border-t border-[var(--line)] pt-4">
                 <button onClick={() => { setEditing((value) => !value); setSymbolsText(watchlist.items.map((item) => item.symbol).join(", ")); }} className="text-left text-sm font-medium flex items-center gap-2" style={{ color: "var(--amber)" }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-                  {editing ? "Close bulk edit" : "Bulk edit symbols"}
+                  {editing ? "Close bulk edit" : "Bulk edit stocks"}
                 </button>
 
                 {editing ? (
                   <div className="mt-3 flex flex-col gap-3">
-                    <label className="sr-only" htmlFor="bulk-symbols">Symbols, comma separated</label>
+                    <label className="sr-only" htmlFor="bulk-symbols">Stocks, comma separated</label>
                     <textarea id="bulk-symbols" value={symbolsText} onChange={(event) => setSymbolsText(event.target.value)} rows={3} className="w-full rounded-xl border border-[var(--line-2)] bg-[var(--ground-2)] p-3 text-sm outline-none focus:border-[var(--amber)] transition-colors" />
                     <button onClick={() => void saveBulk()} className="rounded-xl bg-[var(--ink)] px-4 py-2 text-sm font-medium text-[var(--ground)] hover:opacity-90 transition-opacity">Save list</button>
                   </div>

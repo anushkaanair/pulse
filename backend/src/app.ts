@@ -1,5 +1,5 @@
 import express from "express";
-import pinoHttp from "pino-http";
+import { pinoHttp } from "pino-http";
 import type { Pool } from "pg";
 import { logger } from "./logger.js";
 import { errorHandler } from "./middleware/errorHandler.js";

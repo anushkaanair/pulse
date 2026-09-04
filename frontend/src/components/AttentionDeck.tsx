@@ -7,6 +7,14 @@ import { Sparkline } from "@/components/Sparkline";
 const EVENT_LABELS: Record<string, string> = { DAY_HIGH_BREACHED: "day high", DAY_LOW_BREACHED: "day low", VOLUME_SPIKE: "volume spike", GAP: "gap", CORRECTED: "corrected" };
 const STEP_ROT = 13;
 
+// σ is the right internal metric but not the right word for a new trader
+// at a glance — plain language leads, σ becomes a tooltip/secondary tag.
+function moveLabel(zScore: number | null): string {
+  if (zScore === null) return "New";
+  const a = Math.abs(zScore);
+  return a >= 3 ? "Very unusual" : a >= 2 ? "Unusual move" : "Bigger than usual";
+}
+
 // The stack is anchored at 30% from the left on desktop so receding cards
 // have room to fan out to the right without the front card looking dead
 // centered. On a narrow viewport there's no room for that offset — a
@@ -25,13 +33,13 @@ function layoutFor(containerWidth: number) {
   if (narrow) {
     const cardWExp = Math.max(200, Math.min(280, containerWidth - 48));
     return {
-      compact: { cardW: cardWExp * 0.56, stepX: cardWExp * 0.2, stepZ: 40, anchor: "50%", stageH: 210, cardTop: -84 },
-      expanded: { cardW: cardWExp, stepX: cardWExp * 0.34, stepZ: 70, anchor: "50%", stageH: 400, cardTop: -150 },
+      compact: { cardW: cardWExp * 0.62, cardH: 128, stepX: cardWExp * 0.22, stepZ: 40, anchor: "50%", stageH: 196, cardTop: -64 },
+      expanded: { cardW: cardWExp, cardH: 244, stepX: cardWExp * 0.34, stepZ: 70, anchor: "50%", stageH: 400, cardTop: -150 },
     };
   }
   return {
-    compact: { cardW: 168, stepX: 74, stepZ: 60, anchor: "42%", stageH: 190, cardTop: -78 },
-    expanded: { cardW: 300, stepX: 132, stepZ: 108, anchor: "42%", stageH: 372, cardTop: -140 },
+    compact: { cardW: 178, cardH: 120, stepX: 78, stepZ: 60, anchor: "42%", stageH: 184, cardTop: -60 },
+    expanded: { cardW: 300, cardH: 244, stepX: 132, stepZ: 108, anchor: "42%", stageH: 372, cardTop: -140 },
   };
 }
 
@@ -44,11 +52,13 @@ function layoutFor(containerWidth: number) {
 // meaningful changed" is a real empty state elsewhere on the page, not
 // something this deck should paper over with ordinary movement.
 export function AttentionDeck({
-  items, sparklines, topMover,
+  items, sparklines, topMover, onRefresh, refreshing,
 }: {
   items: ChangeItem[];
   sparklines: Record<string, SparklinePoint[] | undefined>;
   topMover: { symbol: string; displaced: string | null } | null;
+  onRefresh?: () => void;
+  refreshing?: boolean;
 }) {
   const stage = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
@@ -140,6 +150,21 @@ export function AttentionDeck({
       <p className="absolute left-5 top-4 z-20 m-0 text-[10.5px] uppercase tracking-[.15em] text-[var(--muted)]">
         {items.length} worth a look — closest deserves attention
       </p>
+      {onRefresh ? (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onRefresh(); }}
+          disabled={refreshing}
+          title="Reset baseline — compares future visits against right now"
+          aria-label="Reset baseline (attention deck)"
+          className="absolute right-4 top-3.5 z-20 flex h-6 w-6 items-center justify-center rounded-full text-[var(--muted)] transition-colors hover:text-[var(--ink)] disabled:opacity-40"
+          style={{ background: "var(--surface-3)", border: "1px solid var(--line-2)" }}
+        >
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={refreshing ? { animation: "spin .7s linear infinite" } : undefined}>
+            <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.89M13.5 2v3.5H10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      ) : null}
 
       <div
         className="absolute top-1/2"
@@ -193,7 +218,7 @@ export function AttentionDeck({
                 filter: isFront ? "none" : `saturate(${1 - behind * 0.18}) blur(${behind * 0.6}px)`,
               }}
             >
-              <div className="relative overflow-hidden rounded-[15px]" style={{ padding: expanded ? 20 : 12, minHeight: expanded ? 244 : dims.stageH - 20, background: "linear-gradient(168deg, var(--surface-2), var(--surface))", transition: "padding .3s ease" }}>
+              <div className="relative overflow-hidden rounded-[15px]" style={{ padding: expanded ? 20 : 13, minHeight: dims.cardH, background: "linear-gradient(168deg, var(--surface-2), var(--surface))", transition: "padding .3s ease, min-height .5s cubic-bezier(.22,1.4,.36,1)" }}>
                 <span aria-hidden="true" className="pointer-events-none absolute inset-0" style={{ background: "linear-gradient(135deg, rgba(255,255,255,.055), transparent 42%)" }} />
                 <span aria-hidden="true" className="pointer-events-none absolute -right-10 -top-12 h-32 w-32 rounded-full" style={{ filter: "blur(28px)", background: `rgba(0,190,140,${(16 + magnitude * 32) / 100})` }} />
 
@@ -211,10 +236,11 @@ export function AttentionDeck({
                     <div className="mt-1.5 flex items-end justify-between gap-1.5">
                       <span className="numbers text-[13px] font-semibold">₹{Number(item.quote.price).toFixed(0)}</span>
                       <span
-                        className="numbers rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold"
+                        className="rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold"
+                        title={zScore === null ? undefined : `${Math.abs(zScore).toFixed(1)}σ from ${item.symbol}'s own normal move`}
                         style={zScore === null ? { color: "var(--muted)", background: "var(--surface-3)" } : { color: positive ? "var(--green)" : "var(--red)", background: positive ? "rgba(46,204,143,.13)" : "rgba(255,107,91,.13)" }}
                       >
-                        {zScore === null ? "New" : `${positive ? "▲" : "▼"} ${Math.abs(zScore) > 9 ? ">9" : Math.abs(zScore).toFixed(1)}σ`}
+                        {zScore === null ? "New" : `${positive ? "▲" : "▼"} ${moveLabel(zScore)}`}
                       </span>
                     </div>
                   </div>
@@ -251,14 +277,15 @@ export function AttentionDeck({
                     <span className="numbers text-[19px] font-semibold tracking-tight">₹{Number(item.quote.price).toFixed(2)}</span>
                     <span className="flex flex-wrap justify-end items-center gap-1.5">
                       <span
-                        className="numbers rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                        className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
                         title={zScore === null ? undefined : `${Math.abs(zScore).toFixed(1)} standard deviations from ${item.symbol}'s own normal move${sectorAdjusted ? ", sector-adjusted" : ""}`}
                         style={zScore === null
                           ? { color: "var(--muted)", background: "var(--surface-3)" }
                           : { color: positive ? "var(--green)" : "var(--red)", background: positive ? "rgba(46,204,143,.13)" : "rgba(255,107,91,.13)" }}
                       >
-                        {zScore === null ? "New" : `${positive ? "▲" : "▼"} ${Math.abs(zScore) > 9 ? ">9" : Math.abs(zScore).toFixed(1)}σ`}
+                        {zScore === null ? "New" : `${positive ? "▲" : "▼"} ${moveLabel(zScore)}`}
                       </span>
+                      {zScore !== null ? <span className="numbers text-[9.5px] text-[var(--muted)]">{Math.abs(zScore) > 9 ? ">9" : Math.abs(zScore).toFixed(1)}σ</span> : null}
                       {isFront && rawDiffers ? <span className="numbers text-[9.5px] text-[var(--muted)]" title="Raw z-score, before subtracting what the sector did">{Math.abs(zRaw!) > 9 ? ">9" : Math.abs(zRaw!).toFixed(1)}σ raw</span> : null}
                       {isFront && sectorAdjusted ? <span className="rounded-full border border-[var(--line-2)] px-1.5 py-0.5 text-[9.5px] text-[var(--muted)]" title="Adjusted for what the sector/index did over the same window">sector-adj</span> : null}
                       {isFront ? item.change.events.slice(0, 1).map((ev) => (
@@ -275,6 +302,22 @@ export function AttentionDeck({
           );
         })}
       </div>
+
+      {items.length > 1 && !expanded ? (
+        // The peeking edge of the next card is a subtle affordance on its
+        // own — an explicit arrow makes "there's more here" undeniable
+        // rather than something a user has to notice on their own.
+        <button
+          type="button"
+          onClick={() => setActive((a) => Math.min(items.length - 1, a + 1))}
+          disabled={active >= items.length - 1}
+          aria-label="Next"
+          className="absolute right-3 top-1/2 z-20 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-[var(--muted)] transition-colors hover:text-[var(--ink)] disabled:opacity-0"
+          style={{ background: "var(--surface-3)", border: "1px solid var(--line-2)" }}
+        >
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </button>
+      ) : null}
 
       {items.length > 1 ? (
         <div className="absolute bottom-3.5 left-1/2 z-20 flex -translate-x-1/2 gap-1.5">

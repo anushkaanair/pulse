@@ -69,8 +69,17 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
-button, input, textarea { font: inherit; color: inherit; }
-a { color: inherit; }
+/* Layered (not left bare) on purpose: Tailwind v4's utilities live in
+   @layer utilities, and per CSS cascade-layer rules an UNLAYERED style
+   always beats a layered one regardless of specificity — a bare
+   `button { color: inherit }` here would silently win over every
+   `text-[var(...)]` utility on a <button> app-wide (found live: "Save
+   list" rendered as black-on-black, invisible). Layering this under
+   `base` lets Tailwind's own layer order put utilities back on top. */
+@layer base {
+  button, input, textarea { font: inherit; color: inherit; }
+  a { color: inherit; }
+}
 .numbers { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
 
 button, a, input { transition: opacity 150ms ease, background-color 150ms ease, border-color 150ms ease, color 150ms ease; }
@@ -92,3 +101,9 @@ button:disabled { transition: none; }
 
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .hide-scrollbar { scrollbar-width: none; }
+
+@keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.marquee-track { display: inline-flex; white-space: nowrap; animation: marquee 42s linear infinite; will-change: transform; }
+.marquee-mask:hover .marquee-track { animation-play-state: paused; }
+
+@keyframes spin { to { transform: rotate(360deg); } }

@@ -4,11 +4,12 @@ import { expect, test } from "@playwright/test";
 // 940e43f: the conflict modal's "Keep mine" used to retry with the stale
 // pre-conflict version, so it 409'd forever and could never actually win.
 test("a genuine version conflict shows the modal, and 'Keep mine' now actually succeeds", async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem("pulse-entered", "1"));
   await page.goto("/app");
   await page.getByRole("link", { name: /Market watch/ }).click();
 
-  await page.getByRole("button", { name: "Bulk edit symbols" }).click();
-  await expect(page.getByLabel("Symbols, comma separated")).toBeVisible();
+  await page.getByRole("button", { name: "Bulk edit stocks" }).click();
+  await expect(page.getByLabel("Stocks, comma separated")).toBeVisible();
 
   // Simulate a concurrent successful edit from "another device" — bumps
   // the mock's server-side version out from under this page's local state,

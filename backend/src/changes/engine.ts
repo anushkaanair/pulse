@@ -76,6 +76,12 @@ export interface Change {
   // this is the symbol's first-ever recorded event. undefined = not
   // applicable (not a new crossing this poll).
   quietForMs?: number | null;
+  // Set only alongside a VOLUME_SPIKE event — the last tick's volume
+  // increment divided by this symbol's own trailing average. Raw daily
+  // volume ("13.8L") means nothing without a baseline; this is the exact
+  // baseline the engine itself already used to decide "spike" — surfaced,
+  // not just acted on internally.
+  volumeRatio?: number;
 }
 
 export interface EngineResult {
@@ -214,9 +220,10 @@ function changeFor(
     const breachPct = (Number(seen.dayLow) - Number(q.dayLow)) / Number(seen.dayLow);
     if (isSignificant(breachPct)) events.push("DAY_LOW_BREACHED");
   }
+  let volumeRatio: number | undefined;
   if (st && st.meanVolumePerTick > 0) {
     const perTick = (q.volume - seen.volume) / n;
-    if (perTick > st.meanVolumePerTick * cfg.volumeSpikeMultiple) events.push("VOLUME_SPIKE");
+    if (perTick > st.meanVolumePerTick * cfg.volumeSpikeMultiple) { events.push("VOLUME_SPIKE"); volumeRatio = round2(perTick / st.meanVolumePerTick); }
   }
   if (q.prevClose && sessionChanged(seen.asOf, q.asOf)) {
     const gap = Math.abs((now - Number(q.prevClose)) / Number(q.prevClose)) * 100;
@@ -239,6 +246,7 @@ function changeFor(
     sensitivity,
     sectorAdjusted,
     why: why(item, kind, pct, z, zRaw, events, confidence, sensitivity, isMove, sectorAdjusted, indexUnavailableDespiteBeta),
+    ...(volumeRatio !== undefined ? { volumeRatio } : {}),
   };
 }
 
@@ -299,10 +307,19 @@ export function buildDigest(
   const quiet = results.length - meaningful.length - added;
   const since = `Since ${relative(elapsedMs)}`;
   if (meaningful.length === 0) {
-    return `${since}: nothing meaningful changed across ${results.length} symbol${results.length === 1 ? "" : "s"}${added ? ` (${added} newly added)` : ""}.`;
+    return `${since}: nothing meaningful changed across ${results.length} stock${results.length === 1 ? "" : "s"}${added ? ` (${added} newly added)` : ""}.`;
   }
   const top = meaningful.slice(0, 3).map((r) => `${r.symbol} ${short(r)}`).join(", ");
   const more = meaningful.length > 3 ? `, and ${meaningful.length - 3} more` : "";
+  // A multi-day gap with a real backlog reads differently on purpose: lead
+  // with "this many happened, away this long" before the list — scanning
+  // a long-gap sentence for the count shouldn't mean parsing past "top 3"
+  // first. Short gaps (the common case: reopening the tab) keep the
+  // original list-first phrasing, since there's rarely a backlog to signal.
+  const DAY_MS = 24 * 3600 * 1000;
+  if (elapsedMs !== null && elapsedMs >= DAY_MS && meaningful.length > 3) {
+    return `${relative(elapsedMs)} — ${meaningful.length} changes while you were away. Top 3: ${top}${more}.`;
+  }
   return `${since}: ${meaningful.length} thing${meaningful.length === 1 ? "" : "s"} worth a look — ${top}${more}. ${quiet} other${quiet === 1 ? "" : "s"}: nothing meaningful.`;
 }
 

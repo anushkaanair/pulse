@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 // /api/_sim/faults shape the real backend uses) proves FeedStatusBar
 // responds to a degraded feed honestly, never hiding it.
 test("a stale symbol shows its badge without a feed-wide outage", async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem("pulse-entered", "1"));
   await page.goto("/app");
   await page.getByRole("link", { name: /Market watch/ }).click();
 
@@ -17,6 +18,7 @@ test("toggling a feed outage shows the degraded banner, and it never blanks the 
   // whole test stays on ONE page load and moves via client-side Links
   // only. A page.goto() mid-test would silently reset the mock's fault
   // state, since it's re-initialized fresh on every real navigation.
+  await page.addInitScript(() => sessionStorage.setItem("pulse-entered", "1"));
   await page.goto("/dev/faults");
   // A controlled checkbox whose state comes back from an async setFaults
   // call — .check() asserts a synchronous state flip and flakes, so click
