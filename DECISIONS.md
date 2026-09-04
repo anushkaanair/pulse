@@ -57,3 +57,8 @@ why this one.
 **What:** DAY_HIGH_BREACHED/DAY_LOW_BREACHED only fire when the breach magnitude clears the same z-score (or absolute-%) bar used for price moves — not on any strictly-greater comparison.
 **Alternatives:** Fire on any new high/low, however small (the original code).
 **Why:** Found live: seconds after promoting a checkpoint, a normally-drifting stock (+0.13%, 1.3σ) still showed as "meaningful" because it trivially set a new intraday high. Any upward-drifting stock sets a "new high" on nearly every tick — this broke the core promise that "nothing meaningful changed" actually means that, and violated the torture test's own checkpoint-exactness invariant (§10, assertion 7). Caught by running the real flow against the live server, not just unit tests against synthetic data — worth noting for the pitch.
+
+## Checkpoint exactness invariant, refined under real load
+**What:** The provable invariant is "no false-positive re-flag of already-seen data" (every item marked meaningful after a fresh checkpoint reflects a tick strictly newer than the checkpoint), not "zero changes no matter how much time passes."
+**Alternatives:** Assert `summary.meaningful === 0` unconditionally right after checkpointing (the original torture-test spec, §10 assertion 7).
+**Why:** Found running the torture test at a realistic continuous tick rate: real ticks land during the network round-trips between minting a checkpoint, promoting it, and re-polling, so a symbol can legitimately have new data by the time you ask again — showing it is correct, not a bug. The stricter, actually-defensible claim is that nothing shown was already seen. Verified directly: every "meaningful" item's quote timestamp is checked against the checkpoint's own timestamp.
