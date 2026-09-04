@@ -204,7 +204,14 @@ export function AttentionDeck({
                   <h3 className="m-0 text-[17px] font-semibold tracking-tight">{item.symbol}</h3>
                   <p className="mt-0.5 mb-0 truncate text-[11.5px] text-[var(--muted)]">{item.name}</p>
 
-                  <p className="mt-3 mb-0 line-clamp-4 text-[13px] leading-relaxed text-[var(--ink-2)]" style={{ minHeight: "3.5em" }} title={item.change.why}>{item.change.why}</p>
+                  {/* Only the front card shows the full reasoning; receding
+                      cards show a clean one-liner so their text can't bleed
+                      into each other's space (looked chaotic before). */}
+                  {isFront ? (
+                    <p className="mt-3 mb-0 line-clamp-4 text-[13px] leading-relaxed text-[var(--ink-2)]" style={{ minHeight: "3.5em" }} title={item.change.why}>{item.change.why}</p>
+                  ) : (
+                    <p className="mt-3 mb-0 truncate text-[13px] text-[var(--muted)]" style={{ minHeight: "3.5em" }}>{item.change.pctSincePrev ? `${item.change.pctSincePrev}% since you last looked` : "New since last look"}</p>
+                  )}
 
                   <div className="mt-4 flex items-end justify-between gap-2">
                     <span className="numbers text-[19px] font-semibold tracking-tight">₹{Number(item.quote.price).toFixed(2)}</span>
@@ -218,11 +225,11 @@ export function AttentionDeck({
                       >
                         {zScore === null ? "New" : `${positive ? "▲" : "▼"} ${Math.abs(zScore) > 9 ? ">9" : Math.abs(zScore).toFixed(1)}σ`}
                       </span>
-                      {rawDiffers ? <span className="numbers text-[9.5px] text-[var(--muted)]" title="Raw z-score, before subtracting what the sector did">{Math.abs(zRaw!) > 9 ? ">9" : Math.abs(zRaw!).toFixed(1)}σ raw</span> : null}
-                      {sectorAdjusted ? <span className="rounded-full border border-[var(--line-2)] px-1.5 py-0.5 text-[9.5px] text-[var(--muted)]" title="Adjusted for what the sector/index did over the same window">sector-adj</span> : null}
-                      {item.change.events.slice(0, 1).map((ev) => (
+                      {isFront && rawDiffers ? <span className="numbers text-[9.5px] text-[var(--muted)]" title="Raw z-score, before subtracting what the sector did">{Math.abs(zRaw!) > 9 ? ">9" : Math.abs(zRaw!).toFixed(1)}σ raw</span> : null}
+                      {isFront && sectorAdjusted ? <span className="rounded-full border border-[var(--line-2)] px-1.5 py-0.5 text-[9.5px] text-[var(--muted)]" title="Adjusted for what the sector/index did over the same window">sector-adj</span> : null}
+                      {isFront ? item.change.events.slice(0, 1).map((ev) => (
                         <span key={ev} className="rounded-full border border-[var(--line-2)] px-1.5 py-0.5 text-[9.5px] text-[var(--muted)]">{EVENT_LABELS[ev]}</span>
-                      ))}
+                      )) : null}
                     </span>
                   </div>
 

@@ -32,6 +32,7 @@ function WatchlistsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [lists, setLists] = useState<WatchlistSummary[]>([]);
+  const [previews, setPreviews] = useState<Record<string, { meaningful: number; movers: { symbol: string; pct: string; down: boolean }[] }>>({});
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -39,7 +40,24 @@ function WatchlistsPageInner() {
 
   const load = async () => {
     setLoading(true);
-    try { setLists(await api.watchlists()); setError(undefined); }
+    try {
+      const fetched = await api.watchlists();
+      setLists(fetched); setError(undefined);
+      // Per-list "what changed" preview so a card carries real signal at a
+      // glance, not just a name — this is the product's whole point. A
+      // failed preview must never break the list, so each is isolated.
+      fetched.forEach(async (l) => {
+        try {
+          const { data } = await api.changes(l.id, 20);
+          if (!data) return;
+          const movers = data.items.filter((i) => i.change.pctSincePrev !== null)
+            .sort((a, b) => Math.abs(Number(b.change.pctSincePrev)) - Math.abs(Number(a.change.pctSincePrev)))
+            .slice(0, 3)
+            .map((i) => ({ symbol: i.symbol, pct: i.change.pctSincePrev!, down: i.change.pctSincePrev!.startsWith("-") }));
+          setPreviews((p) => ({ ...p, [l.id]: { meaningful: data.summary.meaningful, movers } }));
+        } catch { /* preview is best-effort */ }
+      });
+    }
     catch (cause) { setError(cause); }
     finally { setLoading(false); }
   };
@@ -100,20 +118,37 @@ function WatchlistsPageInner() {
           ) : null}
 
           {!loading && lists.length > 0 ? (
-            <ul className="mt-4 grid gap-3 p-0 list-none" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))" }}>
-              {lists.map((list, i) => (
+            <ul className="mt-4 grid gap-3 p-0 list-none" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))" }}>
+              {lists.map((list, i) => {
+                const pv = previews[list.id];
+                return (
                 <li key={list.id} className="rise" style={{ animationDelay: `${i * 55}ms` }}>
-                  <Link href={`/w/${list.id}`} className="flex w-full flex-col rounded-2xl border border-[var(--line)] p-4 text-left transition-colors hover:border-[var(--line-2)]" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
+                  <Link href={`/w/${list.id}`} className="flex h-full w-full flex-col rounded-2xl border border-[var(--line)] p-4 text-left transition-colors hover:border-[var(--line-2)]" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
                     <span className="flex w-full items-start justify-between gap-3">
                       <span className="min-w-0">
                         <span className="block text-[15px] font-semibold tracking-tight">{list.name}</span>
                         <span className="mt-0.5 block text-[11.5px] text-[var(--muted)]">{list.itemCount} {list.itemCount === 1 ? "symbol" : "symbols"} · updated {new Date(list.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                       </span>
-                      <span aria-hidden="true" className="text-[var(--muted)]">→</span>
+                      {pv ? (
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${pv.meaningful > 0 ? "bg-[var(--amber)]/15 text-[var(--amber)]" : "bg-[var(--green)]/12 text-[var(--green)]"}`}>
+                          {pv.meaningful > 0 ? `${pv.meaningful} worth a look` : "Caught up"}
+                        </span>
+                      ) : <span aria-hidden="true" className="text-[var(--muted)]">→</span>}
+                    </span>
+                    <span className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-[var(--line)] pt-3">
+                      {pv && pv.movers.length > 0 ? pv.movers.map((m) => (
+                        <span key={m.symbol} className="numbers rounded-md bg-[var(--surface-3)] px-1.5 py-0.5 text-[10.5px]">
+                          <span className="text-[var(--ink-2)]">{m.symbol}</span>{" "}
+                          <span style={{ color: m.down ? "var(--red)" : "var(--green)" }}>{m.pct}%</span>
+                        </span>
+                      )) : (
+                        <span className="text-[11px] text-[var(--muted)]">{list.itemCount === 0 ? "No symbols yet" : pv ? "Nothing moved since your baseline" : "Loading movement…"}</span>
+                      )}
                     </span>
                   </Link>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           ) : null}
           <ErrorText error={error} />
