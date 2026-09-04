@@ -275,6 +275,31 @@ async function main() {
     `${meaningfulItems.length} meaningful, ${stalePositives.length} were stale re-flags (bad); gap was real ticks arriving during the round-trip, which is expected at this tick rate`,
   );
 
+  // ---- Checkpoint idempotency: a retried POST must not race itself ----
+  // Two concurrent identical checkpoint requests, same Idempotency-Key —
+  // the second must not re-run, only replay the first's result. Proven two
+  // ways: both responses agree, AND checkpoint_history gained exactly one
+  // row for this promotion, not two (the race this exists to prevent).
+  const snap3 = await api(`/api/watchlists/${primaryWl}/changes`, { userId: primary.id });
+  const idemKey = `torture-idem-${Date.now()}`;
+  const historyBefore = await pool.query<{ n: string }>(
+    "SELECT count(*)::text AS n FROM checkpoint_history WHERE watchlist_id = $1", [primaryWl],
+  );
+  const [idem1, idem2] = await Promise.all([
+    api(`/api/watchlists/${primaryWl}/checkpoint`, { method: "POST", userId: primary.id, headers: { "Idempotency-Key": idemKey }, body: JSON.stringify({ snapshotId: snap3.body.snapshotId }) }),
+    api(`/api/watchlists/${primaryWl}/checkpoint`, { method: "POST", userId: primary.id, headers: { "Idempotency-Key": idemKey }, body: JSON.stringify({ snapshotId: snap3.body.snapshotId }) }),
+  ]);
+  check("two concurrent checkpoint POSTs with the same Idempotency-Key both succeed and agree", idem1.status === 201 && idem2.status === 201 && idem1.body.takenAt === idem2.body.takenAt, `${idem1.status}/${idem2.status}, ${idem1.body.takenAt} vs ${idem2.body.takenAt}`);
+  const historyAfter = await pool.query<{ n: string }>(
+    "SELECT count(*)::text AS n FROM checkpoint_history WHERE watchlist_id = $1", [primaryWl],
+  );
+  // delta is 0 or 1 depending on whether snap3 happened to already be the
+  // most-recently-promoted snapshot (mintSnapshot's dedup can reuse one
+  // across a quiet moment) — either is fine; 2 is the actual race this
+  // guards against and must never happen.
+  const historyDelta = Number(historyAfter.rows[0].n) - Number(historyBefore.rows[0].n);
+  check("the concurrent race did not double-log the visit", historyDelta <= 1, `delta=${historyDelta}`);
+
   // ---- Staleness honesty: real outage, real recovery ----
   console.log("\ntesting outage -> stale -> recovery (real wait, ~12s)...\n");
   await api("/api/_sim/faults", { method: "POST", body: JSON.stringify({ outage: true }) });

@@ -24,7 +24,7 @@ export function createApp(pool: Pool, ingestor: Ingestor) {
   // Permissive CORS for the local Next.js dev server; identity is a header.
   app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", req.headers.origin ?? "*");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-User-Id, If-None-Match");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-User-Id, If-None-Match, Idempotency-Key");
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
     res.setHeader("Access-Control-Expose-Headers", "ETag");
     if (req.method === "OPTIONS") return res.sendStatus(204);

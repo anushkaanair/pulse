@@ -95,7 +95,11 @@ export const api = {
     const response = await request<ChangesResponse>(`/api/watchlists/${id}/changes?limit=${limit}`, {}, etag);
     return { data: response.data, etag: response.etag, notModified: response.status === 304 };
   },
-  checkpoint: (id: string, snapshotId: string) => USE_MOCK ? import("./mock").then(({ mock }) => mock.checkpoint(id, snapshotId)) : request<{ takenAt: string }>(`/api/watchlists/${id}/checkpoint`, { method: "POST", body: JSON.stringify({ snapshotId }) }).then(({ data }) => data!),
+  // One idempotency key per checkpoint intent: if this exact call is ever
+  // retried (a client-side timeout, a future retry-on-network-error layer),
+  // the server replays the first result instead of racing itself — see
+  // routes/checkpoint.ts.
+  checkpoint: (id: string, snapshotId: string) => USE_MOCK ? import("./mock").then(({ mock }) => mock.checkpoint(id, snapshotId)) : request<{ takenAt: string }>(`/api/watchlists/${id}/checkpoint`, { method: "POST", body: JSON.stringify({ snapshotId }), headers: { "Idempotency-Key": crypto.randomUUID() } }).then(({ data }) => data!),
   quotes: (symbols: string[]) => USE_MOCK ? import("./mock").then(({ mock }) => mock.quotes(symbols)) : request<Quote[]>(`/api/quotes?symbols=${encodeURIComponent(symbols.join(","))}`).then(({ data }) => data!),
   setFaults: (config: FaultConfig) => USE_MOCK ? import("./mock").then(({ mock }) => mock.setFaults(config)) : request<{ active: FaultConfig }>("/api/_sim/faults", { method: "POST", body: JSON.stringify(config) }).then(({ data }) => data!),
   sparklines: (id: string, limit = 30) => USE_MOCK ? import("./mock").then(({ mock }) => mock.sparklines(id, limit)) : request<Sparklines>(`/api/watchlists/${id}/sparklines?limit=${limit}`).then(({ data }) => data!),
