@@ -47,3 +47,8 @@ why this one.
 **What:** One generated summary sentence; a quiet/normal/loud setting per symbol that scales the z threshold.
 **Alternatives:** Alerts with absolute thresholds, notifications, visit timeline, sharing.
 **Why:** Both change what the core surfaces rather than adding screens; both answer a real reason people stop using watchlists (too much noise). The rest is either infra we can't finish or padding.
+
+## Elapsed-tick cap must not reuse HISTORY_WINDOW
+**What:** The away-aware `n` (ticks since checkpoint) is capped at ~30 days of ticks, not `HISTORY_WINDOW`.
+**Alternatives:** Cap `n` at `HISTORY_WINDOW` (the original code, and the original spec in IMPLEMENTATION_PLAN.md).
+**Why:** Caught by the engine's own unit tests: `HISTORY_WINDOW` defaults to 50 ticks (~50s at the default tick rate), which is how much price history estimates σ from — not how long a user can be away. Reusing it as the elapsed-time cap silently disabled away-aware scaling for anyone gone more than a minute, defeating the feature for the multi-day-absence case it exists to handle. This is why the torture test and unit tests run before the demo, not just for show.
