@@ -6,3 +6,9 @@ dist/
 *.log
 .DS_Store
 coverage/
+
+# Playwright
+test-results/
+playwright-report/
+/frontend/test-results/
+/frontend/playwright-report/

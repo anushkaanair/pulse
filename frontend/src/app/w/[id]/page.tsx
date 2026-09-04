@@ -34,8 +34,15 @@ export default function WatchlistPage() {
     let cancelled = false;
     let latestEtag: string | undefined;
     let timer: ReturnType<typeof setInterval> | undefined;
-    const poll = async () => {
-      if (document.visibilityState === "hidden") return;
+    // The actual fetch — always runs when called. Visibility only gates
+    // whether it gets called on a *recurring* timer (see `poll` below); a
+    // navigation to this page is an explicit visit and must load data even
+    // if the tab happens to be backgrounded (opened via middle-click, not
+    // yet focused, etc.) or the browser reports 'hidden' for other reasons
+    // (headless test runners do this by default) — gating the FIRST load
+    // on visibility was a real bug, not just a testing inconvenience: a
+    // background tab would show "Loading..." forever until focused.
+    const fetchChanges = async () => {
       try {
         const response = await api.changes(id, 20, latestEtag);
         if (cancelled) return;
@@ -44,7 +51,10 @@ export default function WatchlistPage() {
         setSparklines(await api.sparklines(id, 30));
       } catch (cause) { if (!cancelled) setError(cause); }
     };
-    const begin = async () => { try { const list = await api.watchlist(id); if (!cancelled) setWatchlist(list); await poll(); } catch (cause) { if (!cancelled) setError(cause); } };
+    // Recurring/background-triggered polls DO respect visibility — no
+    // point spending requests on a tab nobody's looking at.
+    const poll = async () => { if (document.visibilityState !== "hidden") await fetchChanges(); };
+    const begin = async () => { try { const list = await api.watchlist(id); if (!cancelled) setWatchlist(list); await fetchChanges(); } catch (cause) { if (!cancelled) setError(cause); } };
     const visibility = () => { if (document.visibilityState === "visible") void poll(); };
     void begin();
     timer = setInterval(() => void poll(), 15_000);
@@ -63,7 +73,7 @@ export default function WatchlistPage() {
   return <main className="min-h-screen"><FeedStatusBar status={changes.feed.status} lagSeconds={changes.feed.lagSeconds} /><div className="mx-auto max-w-[880px] px-4 py-8 sm:px-8"><header className="flex items-center justify-between"><div><Link href="/" className="text-xs text-[var(--muted)] underline underline-offset-4 hover:text-[var(--ink)]">Watchlists</Link><h1 className="mt-2 text-[28px] font-medium tracking-tight">{watchlist.name}</h1><Link href={`/w/${id}/history`} className="mt-1 inline-block text-xs text-[var(--muted)] underline underline-offset-4 hover:text-[var(--ink)]">History</Link></div><button onClick={markSeen} disabled={marking} className="border border-[var(--ink)] px-3 py-2 text-sm disabled:opacity-40 enabled:hover:bg-black/5">{marking ? "Marking…" : "Mark as seen"}</button></header>
     <section className="mt-8"><p className="text-xs tracking-[0.16em] text-[var(--amber)] uppercase">Since you last looked</p><p className="mt-3 max-w-3xl text-xl font-medium leading-7">{changes.digest}</p><p className="mt-2 text-xs text-[var(--muted)]">{changes.baseline.kind === "first-visit" ? "First visit · this becomes your baseline." : `You were away ${away(changes.baseline.awaySeconds)} · ${changes.summary.meaningful} of ${changes.summary.total} worth a look`}</p>
       {changes.summary.meaningful === 0 ? <p className="mt-6 text-sm text-[var(--muted)]">Nothing meaningful changed since {changes.baseline.takenAt ? new Date(changes.baseline.takenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "your last visit"}.</p> : <div className="mt-6 grid gap-3 md:grid-cols-2">{meaningful.map((item) => <ChangeCard key={item.symbol} item={item} />)}</div>}</section>
-    <section className="mt-12"><div className="flex items-baseline justify-between gap-4"><div><p className="text-xs tracking-[0.16em] text-[var(--muted)] uppercase">Full list</p><h2 className="mt-2 text-xl font-medium">Everything you track</h2></div><div className="flex items-center gap-4"><span className="text-xs text-[var(--muted)]">{watchlist.items.length} symbols</span><AddSymbol watchlistId={id} onAdded={setWatchlist} /></div></div><button onClick={() => { setEditing((value) => !value); setSymbolsText(watchlist.items.map((item) => item.symbol).join(", ")); }} className="mt-4 text-xs text-[var(--muted)] underline underline-offset-4 hover:text-[var(--ink)]">{editing ? "Close bulk edit" : "Bulk edit symbols"}</button>{editing ? <div className="mt-3 flex gap-2"><input value={symbolsText} onChange={(event) => setSymbolsText(event.target.value)} className="min-w-0 flex-1 border-b border-[var(--line)] bg-transparent py-2 text-sm outline-none" /><button onClick={() => void saveBulk()} className="border border-[var(--ink)] px-3 py-2 text-sm hover:bg-black/5">Save list</button></div> : null}{watchlist.items.length === 0 ? <p className="mt-5 border-y border-[var(--line)] py-6 text-sm text-[var(--muted)]">This watchlist is empty. Add a symbol to start a baseline.</p> : watchlist.items.length > VIRTUALIZE_ABOVE ? (
+    <section className="mt-12"><div className="flex items-baseline justify-between gap-4"><div><p className="text-xs tracking-[0.16em] text-[var(--muted)] uppercase">Full list</p><h2 className="mt-2 text-xl font-medium">Everything you track</h2></div><div className="flex items-center gap-4"><span className="text-xs text-[var(--muted)]">{watchlist.items.length} symbols</span><AddSymbol watchlistId={id} onAdded={setWatchlist} /></div></div><button onClick={() => { setEditing((value) => !value); setSymbolsText(watchlist.items.map((item) => item.symbol).join(", ")); }} className="mt-4 text-xs text-[var(--muted)] underline underline-offset-4 hover:text-[var(--ink)]">{editing ? "Close bulk edit" : "Bulk edit symbols"}</button>{editing ? <div className="mt-3 flex gap-2"><input value={symbolsText} onChange={(event) => setSymbolsText(event.target.value)} aria-label="Symbols, comma separated" className="min-w-0 flex-1 border-b border-[var(--line)] bg-transparent py-2 text-sm outline-none" /><button onClick={() => void saveBulk()} className="border border-[var(--ink)] px-3 py-2 text-sm hover:bg-black/5">Save list</button></div> : null}{watchlist.items.length === 0 ? <p className="mt-5 border-y border-[var(--line)] py-6 text-sm text-[var(--muted)]">This watchlist is empty. Add a symbol to start a baseline.</p> : watchlist.items.length > VIRTUALIZE_ABOVE ? (
       <VirtualizedRows items={watchlist.items} changes={changes} sparklines={sparklines} id={id} refreshWatchlist={refreshWatchlist} />
     ) : (
       <ul className="mt-5 divide-y divide-[var(--line)] border-y border-[var(--line)]">
