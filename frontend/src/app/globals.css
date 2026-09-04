@@ -1,0 +1,117 @@
+@import "tailwindcss";
+
+/* Groww brand: green primary, blue secondary. Dual theme — light is the
+   default palette on bare :root; dark is applied by the system preference
+   OR an explicit [data-theme="dark"] (the header toggle). The existing
+   components reference --amber* as their "highlight" accent, so those
+   tokens are mapped to the brand GREEN here — one place, no per-file edits. */
+:root {
+  --ground: #0a0a0b;
+  --ground-2: #0f1013;
+  --surface: #141519;
+  --surface-2: #17181e;
+  --surface-3: #1d1f27;
+  --ink: #f2f4f8;
+  --ink-dark: #f2f4f8;
+  --ink-2: #b4b8c4;
+  --muted: #8b90a0;
+  --line: #24262e;
+  --line-2: #2f323c;
+  --accent: #00d09c;      /* green */
+  --accent-2: #7c8cff;    /* blue  */
+  --green: #00d09c;
+  --red: #ff6b5b;
+  --amber: #00d09c;
+  --amber-2: #35e3b6;
+  --amber-dim: #00a37a;
+  --urgent: #e0a83e;
+  --shadow-deck: rgba(0,0,0,.9);
+  --hero-filter: invert(1) hue-rotate(180deg) brightness(1.2);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --ground: #f7f8fa;
+    --ground-2: #eef0f4;
+    --surface: #ffffff;
+    --surface-2: #ffffff;
+    --surface-3: #f1f3f6;
+    --ink: #1a1d29;
+    --ink-dark: #1a1d29;
+    --ink-2: #4a4f5e;
+    --muted: #6b7280;
+    --line: #e6e8ec;
+    --line-2: #d7dae0;
+    --accent: #00b386;
+    --accent-2: #4152e6;
+    --green: #00b386;
+    --red: #e0402b;
+    --amber: #00b386;
+    --amber-2: #12c79a;
+    --amber-dim: #00795c;
+    --urgent: #b8862b;
+    --shadow-deck: rgba(20,32,50,.20);
+    --hero-filter: none;
+  }
+}
+:root[data-theme="light"] {
+  --ground: #f7f8fa; --ground-2: #eef0f4; --surface: #ffffff; --surface-2: #ffffff; --surface-3: #f1f3f6;
+  --ink: #1a1d29; --ink-dark: #1a1d29; --ink-2: #4a4f5e; --muted: #6b7280; --line: #e6e8ec; --line-2: #d7dae0;
+  --accent: #00b386; --accent-2: #4152e6; --green: #00b386; --red: #e0402b;
+  --amber: #00b386; --amber-2: #12c79a; --amber-dim: #00795c; --urgent: #b8862b; --shadow-deck: rgba(20,32,50,.20);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100%;
+  background:
+    radial-gradient(1100px 600px at 12% -8%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 60%),
+    radial-gradient(900px 500px at 92% 4%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 62%),
+    var(--ground);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+/* Layered (not left bare) on purpose: Tailwind v4's utilities live in
+   @layer utilities, and per CSS cascade-layer rules an UNLAYERED style
+   always beats a layered one regardless of specificity — a bare
+   `button { color: inherit }` here would silently win over every
+   `text-[var(...)]` utility on a <button> app-wide (found live: "Save
+   list" rendered as black-on-black, invisible). Layering this under
+   `base` lets Tailwind's own layer order put utilities back on top. */
+@layer base {
+  button, input, textarea { font: inherit; color: inherit; }
+  a { color: inherit; }
+}
+.numbers { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+
+button, a, input { transition: opacity 150ms ease, background-color 150ms ease, border-color 150ms ease, color 150ms ease; }
+button:disabled { transition: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+
+@keyframes card-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.card-enter { animation: card-enter 200ms ease-out; }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+.rise { animation: rise .5s cubic-bezier(.2,.8,.2,1) backwards; }
+
+@keyframes dot-pulse { 0% { transform: scale(1); opacity: .55; } 70% { transform: scale(2.2); opacity: 0; } 100% { opacity: 0; } }
+.dot-live { position: relative; }
+.dot-live::after { content: ""; position: absolute; inset: 0; border-radius: 999px; background: currentColor; animation: dot-pulse 2.4s cubic-bezier(.2,.8,.2,1) infinite; }
+
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { scrollbar-width: none; }
+
+@keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.marquee-track { display: inline-flex; white-space: nowrap; animation: marquee 42s linear infinite; will-change: transform; }
+.marquee-mask:hover .marquee-track { animation-play-state: paused; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Deep-link landing target (a preview chip on /app → this exact row) —
+   a brief highlight so "here" is unmistakable, not just scrolled-to. */
+@keyframes deep-link-flash { 0%, 100% { background: transparent; } 30% { background: color-mix(in srgb, var(--amber) 18%, transparent); } }
+.deep-link-flash { animation: deep-link-flash 2.2s ease-out; border-radius: 10px; }
