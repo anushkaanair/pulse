@@ -69,6 +69,13 @@ export interface Change {
   // volatility. False means it fell back to the plain per-stock z (thin
   // beta history, or the index feed itself was unavailable — see `why`).
   sectorAdjusted: boolean;
+  // The "second clock" (see changes/significance.ts): how long since this
+  // symbol's PREVIOUS significant event, attached only to a genuinely new
+  // crossing (never set by the engine itself — it's pure and has no notion
+  // of history across requests; routes/changes.ts fills this in). null =
+  // this is the symbol's first-ever recorded event. undefined = not
+  // applicable (not a new crossing this poll).
+  quietForMs?: number | null;
 }
 
 export interface EngineResult {

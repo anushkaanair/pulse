@@ -31,6 +31,7 @@ function changesData(): ChangesResponse {
       summary: { meaningful: 0, total: current.items.length, stale: 0, newSinceLast: 0 },
       attentionBudget: 5,
       topMover: null,
+      retractions: [],
       items: current.items.map((entry) => ({
         ...entry, quote: entry.quote ?? quote(entry.symbol, "0"),
         change: { kind: "none", pctSincePrev: null, zScore: null, zRaw: null, events: [], confidence: "high", attention: 0, sensitivity: entry.sensitivity, why: "First look — this is your baseline.", sectorAdjusted: false },
@@ -57,6 +58,7 @@ function changesData(): ChangesResponse {
     summary: { meaningful, total: current.items.length, stale: current.items.filter((entry) => entry.stale).length, newSinceLast: 0 },
     attentionBudget: 5,
     topMover: acknowledged ? null : { symbol: "TCS", displaced: "RELIANCE" },
+    retractions: [],
     items: changes,
   };
 }

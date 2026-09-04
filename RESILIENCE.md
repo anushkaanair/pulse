@@ -68,6 +68,26 @@ tests pass" — you can name the guarantee, then go watch it get checked live.
    re-checked *after* the kill, against the same running system, not a
    fresh one.
 
+9. **A surfaced change is corrected, never silently deleted.** If the tick
+   that triggered a previously-shown significant move is later revised
+   below threshold, that's a *retraction* — a first-class, visible item
+   (`retractions[]` in the `/changes` response, a banner in the UI), not an
+   erased claim. The user may have already seen and acted on the original;
+   pretending it never happened would be a second lie stacked on the
+   feed's first one. Checked live against the real server: force a
+   significant move, confirm it's recorded, correct that exact tick below
+   threshold, confirm a retraction appears — and confirm it does *not*
+   appear again on the next poll (guarded by a one-time `retracted_at`).
+   See [`changes/significance.ts`](backend/src/changes/significance.ts)
+   and `DECISIONS.md`.
+
+10. **Concurrent identical checkpoint POSTs don't race each other into
+   double-logging a visit.** `POST /checkpoint` accepts an `Idempotency-Key`;
+   a request under a key already in flight is awaited and replayed, not
+   re-executed. Checked live: two concurrent POSTs under the same key
+   return an identical `takenAt`, and the visit history gains at most one
+   new entry, not two.
+
 All ~20 checks currently pass; see the script's own output for the exact,
 current list — this document names the guarantees, the script is the source
 of truth for what's actually verified this run.

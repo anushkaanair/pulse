@@ -3,11 +3,12 @@ import { Router } from "express";
 import type { Pool } from "pg";
 import { z } from "zod";
 import { config } from "../config.js";
-import { buildDigest, computeChanges, DEFAULT_MULTIPLIER, type EngineItem, type SnapshotPayload } from "../changes/engine.js";
+import { buildDigest, computeChanges, DEFAULT_MULTIPLIER, type Change, type EngineItem, type EngineResult, type SnapshotPayload } from "../changes/engine.js";
 import { loadStats } from "../changes/stats.js";
+import { decideSignificance, type SignificanceRow } from "../changes/significance.js";
 import { AppError } from "../middleware/errorHandler.js";
 import { feedStatus } from "./health.js";
-import { formatQuote, type QuoteRow } from "./quotes.js";
+import { formatQuote, type Quote, type QuoteRow } from "./quotes.js";
 import type { Ingestor } from "../market/ingestor.js";
 import { MARKET_INDEX_SYMBOL } from "../market/indexSymbol.js";
 
@@ -90,6 +91,15 @@ export function changesRouter(pool: Pool, ingestor: Ingestor) {
         sensitivityMultiplier: DEFAULT_MULTIPLIER,
       }, indexReturn);
 
+      const quoteBySymbol = new Map(items.rows.filter((i) => i.as_of).map((i) => [i.symbol, formatQuote(i, now)]));
+
+      // The second clock: independent of this (or any) user's visits, has
+      // this symbol done something notable, and — the hard part — if the
+      // tick that triggered its last event was later corrected below
+      // threshold, that's surfaced as a visible retraction, never a silent
+      // erase. See changes/significance.ts and DECISIONS.md.
+      const { quietForMs, retractions } = await applySignificanceClock(pool, results, quoteBySymbol, now);
+
       // Watchlist-relative ranking, not just magnitude: `results` is already
       // sorted by the engine's own attention score, so results[0] (if it's
       // actually meaningful) IS the current #1 mover. Compared against who
@@ -114,7 +124,6 @@ export function changesRouter(pool: Pool, ingestor: Ingestor) {
       }
       const snapshotId = await mintSnapshot(pool, req.userId, req.params.id, payload, currentTop, currentIndexPrice);
 
-      const quoteBySymbol = new Map(items.rows.filter((i) => i.as_of).map((i) => [i.symbol, formatQuote(i, now)]));
       const asOfMax = items.rows.reduce<Date | null>((m, i) => (i.as_of && (!m || i.as_of > m) ? new Date(i.as_of) : m), null);
       const baselineKind = baseline ? "checkpoint" : "first-visit";
 
@@ -142,9 +151,12 @@ export function changesRouter(pool: Pool, ingestor: Ingestor) {
         // attention ranking, so the client just takes the top N of it.
         attentionBudget: config.attentionBudget,
         topMover,
+        // A retraction is a first-class, visible item — never a silent
+        // delete of something already shown. See changes/significance.ts.
+        retractions,
         items: results.slice(0, limit).map((x) => {
           const quote = quoteBySymbol.get(x.symbol) ?? null;
-          return { symbol: x.symbol, name: x.name, quote, stale: quote ? quote.stale : true, change: x.change };
+          return { symbol: x.symbol, name: x.name, quote, stale: quote ? quote.stale : true, change: withQuietNote(x.change, quietForMs.get(x.symbol)) };
         }),
       });
     } catch (err) {
@@ -192,4 +204,79 @@ async function mintSnapshot(
 
 export function payloadHash(payload: SnapshotPayload) {
   return createHash("sha1").update(JSON.stringify(payload)).digest("hex");
+}
+
+interface Retraction { symbol: string; name: string; previousZ: number | null }
+
+// Global per-symbol state (not per-user — see significance.ts): batch-load
+// prior state for every symbol in this response, decide per symbol, batch-
+// write the results. One extra query plus at most one write per symbol
+// that actually changed state this poll — most polls touch zero rows here.
+async function applySignificanceClock(
+  pool: Pool,
+  results: EngineResult[],
+  quoteBySymbol: Map<string, Quote>,
+  now: Date,
+): Promise<{ quietForMs: Map<string, number | null>; retractions: Retraction[] }> {
+  const quietForMs = new Map<string, number | null>();
+  const retractions: Retraction[] = [];
+  const symbols = results.map((r) => r.symbol);
+  if (symbols.length === 0) return { quietForMs, retractions };
+
+  const { rows } = await pool.query<{
+    symbol: string; last_event_at: Date | null; last_event_as_of: Date | null;
+    last_event_z: string | null; retracted_at: Date | null;
+  }>(
+    "SELECT symbol, last_event_at, last_event_as_of, last_event_z, retracted_at FROM symbol_significance WHERE symbol = ANY($1)",
+    [symbols],
+  );
+  const priorBySymbol = new Map<string, SignificanceRow>(rows.map((r) => [r.symbol, {
+    lastEventAt: r.last_event_at, lastEventAsOf: r.last_event_as_of,
+    lastEventZ: r.last_event_z === null ? null : Number(r.last_event_z), retractedAt: r.retracted_at,
+  }]));
+
+  const writes: Promise<unknown>[] = [];
+  for (const result of results) {
+    const quote = quoteBySymbol.get(result.symbol);
+    if (!quote) continue;
+    const decision = decideSignificance(
+      priorBySymbol.get(result.symbol) ?? null,
+      { kind: result.change.kind, zScore: result.change.zScore },
+      { asOf: new Date(quote.asOf), corrected: quote.corrected },
+      now,
+    );
+    if (decision.action === "new-event") {
+      quietForMs.set(result.symbol, decision.quietForMs);
+      writes.push(pool.query(
+        `INSERT INTO symbol_significance (symbol, last_event_at, last_event_as_of, last_event_z, retracted_at)
+         VALUES ($1, $2, $3, $4, NULL)
+         ON CONFLICT (symbol) DO UPDATE SET
+           last_event_at = EXCLUDED.last_event_at, last_event_as_of = EXCLUDED.last_event_as_of,
+           last_event_z = EXCLUDED.last_event_z, retracted_at = NULL`,
+        [result.symbol, now, new Date(quote.asOf), result.change.zScore],
+      ));
+    } else if (decision.action === "retract") {
+      retractions.push({ symbol: result.symbol, name: result.name, previousZ: decision.previousZ });
+      writes.push(pool.query("UPDATE symbol_significance SET retracted_at = $2 WHERE symbol = $1", [result.symbol, now]));
+    }
+  }
+  await Promise.all(writes);
+  return { quietForMs, retractions };
+}
+
+function withQuietNote(change: Change, quietForMs: number | null | undefined): Change {
+  if (quietForMs === undefined) return change;
+  const note = quietForMs === null
+    ? " First recorded significant move for this symbol."
+    : ` Quiet for ${humanizeDuration(quietForMs)} before this.`;
+  return { ...change, quietForMs, why: change.why + note };
+}
+
+function humanizeDuration(ms: number): string {
+  const days = Math.floor(ms / 86_400_000);
+  if (days >= 1) return `${days} day${days === 1 ? "" : "s"}`;
+  const hours = Math.floor(ms / 3_600_000);
+  if (hours >= 1) return `${hours} hour${hours === 1 ? "" : "s"}`;
+  const minutes = Math.max(1, Math.floor(ms / 60_000));
+  return `${minutes} min${minutes === 1 ? "" : "s"}`;
 }

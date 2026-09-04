@@ -28,8 +28,14 @@ export interface ChangeItem {
     zScore: number | null; zRaw: number | null;
     events: ChangeEvent[]; confidence: "high" | "low"; attention: number; sensitivity: Sensitivity; why: string;
     sectorAdjusted: boolean;
+    // The "second clock" (independent of any visit): set only on a
+    // genuinely new significant crossing. null = this symbol's first-ever
+    // recorded event; a number = how long it was quiet before this one;
+    // undefined = not applicable this poll.
+    quietForMs?: number | null;
   };
 }
+export interface Retraction { symbol: string; name: string; previousZ: number | null }
 export interface ChangesResponse {
   snapshotId: string;
   baseline: { takenAt: string | null; kind: "checkpoint" | "first-visit"; awaySeconds: number | null };
@@ -39,6 +45,10 @@ export interface ChangesResponse {
   // The current #1 ranked mover, when it's different from who held that
   // spot as of the last checkpoint — rank-of-attention, not just magnitude.
   topMover: { symbol: string; displaced: string | null } | null;
+  // A previously-surfaced significant move whose triggering tick was later
+  // corrected below threshold — shown, never silently dropped. Almost
+  // always empty; see changes/significance.ts.
+  retractions: Retraction[];
   items: ChangeItem[];
 }
 export interface ConflictResponse { error: string; code: "VERSION_CONFLICT"; current: { version: number; items: WatchlistItem[] } }

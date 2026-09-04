@@ -105,6 +105,20 @@ export default function WatchlistPage() {
 
         {/* Left Column - Main Content */}
         <div className="min-w-0">
+          {/* A retraction is corrected, never silently deleted — shown as
+              its own small, explicit list, distinct from the ranked cards
+              below. Almost always empty. */}
+          {changes.retractions.length > 0 ? (
+            <div className="mb-6 rounded-xl border border-[var(--amber)]/30 bg-[var(--amber)]/5 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-[var(--amber)] mb-2">Corrected since last shown</p>
+              {changes.retractions.map((r) => (
+                <p key={r.symbol} className="text-sm text-[var(--ink-dark)]">
+                  <span className="font-medium">{r.symbol}</span>&rsquo;s earlier move was revised{r.previousZ !== null ? ` (was ${Math.abs(r.previousZ).toFixed(1)}σ)` : ""} — no longer unusual for this stock.
+                </p>
+              ))}
+            </div>
+          ) : null}
+
           {/* Since You Last Looked */}
           <section className="mb-10">
             <h2 className="text-xl font-medium mb-1 tracking-tight text-[var(--ink-dark)]">Most meaningful changes</h2>
