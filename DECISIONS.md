@@ -1,0 +1,39 @@
+# Decision Log
+
+Non-obvious choices, logged as made. Three lines each: what, alternatives,
+why this one.
+
+## Checkpoint stores a snapshot, not a timestamp
+**What:** "Last seen" is a `jsonb` snapshot of the quotes as rendered, promoted by `snapshotId`.
+**Alternatives:** Store `last_seen_at` and diff against history at that time.
+**Why:** A timestamp depends on history retention and is wrong the moment a late tick rewrites the past. A snapshot is exactly what the user saw, forever. The `snapshotId` handshake also closes the render-vs-mark race.
+
+## "Meaningful" = z-score against trailing volatility, not a fixed threshold
+**What:** `z = move / trailing σ`; meaningful at `|z| ≥ 2`; absolute fallback with `confidence="low"` when history is thin.
+**Alternatives:** Fixed % threshold; ML/news scoring.
+**Why:** A fixed threshold is wrong for every stock but one. ML isn't explainable in one sentence. z-score is defensible, cheap, and the `why` string writes itself.
+
+## Monotonic upsert enforced in SQL
+**What:** `ON CONFLICT ... WHERE quotes.as_of < EXCLUDED.as_of OR (equal as_of AND lower seq)`.
+**Alternatives:** Check-then-write in the ingestor.
+**Why:** Check-then-write races under concurrency. The database is the only place that can make "never regress a quote" true.
+
+## Simulated provider with fault injection is the default feed
+**What:** Deterministic simulator behind a `MarketDataProvider` interface, with knobs for outage/delay/out-of-order/duplicate/correction.
+**Alternatives:** Real free market API as the default.
+**Why:** The rubric names "unreliable dependencies." A real API can't be made to fail on command in a demo; a simulator can, reproducibly. The interface keeps a real adapter possible.
+
+## Polling + ETag, not WebSockets
+**What:** Client polls `/changes` every 15s with `If-None-Match`.
+**Alternatives:** WebSocket push.
+**Why:** The problem is state-on-return, not live ticking. Polling is simpler, cacheable, and its failure modes are obvious. Push would be hours spent on something the brief doesn't ask about.
+
+## Shared ingestion; diff computed on read
+**What:** Poll the union of all watched symbols once; compute each user's diff at request time.
+**Alternatives:** Per-user background diff jobs; per-user polling.
+**Why:** Cost scales with distinct symbols, not users × symbols. Reads are cheap and cacheable; background jobs are state to keep correct.
+
+## No real auth
+**What:** `X-User-Id` header.
+**Alternatives:** JWT/session auth.
+**Why:** Orthogonal to what's graded. Three hours that prove nothing about the diff engine.
