@@ -18,7 +18,22 @@ export default function WatchlistPage() {
   const [error, setError] = useState<unknown>();
   const [marking, setMarking] = useState(false);
 
-  useEffect(() => { void Promise.all([api.watchlist(id), api.changes(id)]).then(([list, poll]) => { setWatchlist(list); setChanges(poll.data ?? undefined); }).catch(setError); }, [id]);
+  useEffect(() => {
+    let cancelled = false;
+    let latestEtag: string | undefined;
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const poll = async () => {
+      if (document.visibilityState === "hidden") return;
+      try { const response = await api.changes(id, 20, latestEtag); if (cancelled) return; latestEtag = response.etag ?? latestEtag; if (response.data) setChanges(response.data); }
+      catch (cause) { if (!cancelled) setError(cause); }
+    };
+    const begin = async () => { try { const list = await api.watchlist(id); if (!cancelled) setWatchlist(list); await poll(); } catch (cause) { if (!cancelled) setError(cause); } };
+    const visibility = () => { if (document.visibilityState === "visible") void poll(); };
+    void begin();
+    timer = setInterval(() => void poll(), 15_000);
+    document.addEventListener("visibilitychange", visibility);
+    return () => { cancelled = true; if (timer) clearInterval(timer); document.removeEventListener("visibilitychange", visibility); };
+  }, [id]);
   const refreshWatchlist = async (work: () => Promise<Watchlist>) => { try { setWatchlist(await work()); } catch (cause) { setError(cause); } };
   const markSeen = async () => { if (!changes) return; setMarking(true); try { await api.checkpoint(id, changes.snapshotId); const latest = await api.changes(id); setChanges(latest.data ?? undefined); } catch (cause) { setError(cause); } finally { setMarking(false); } };
 
