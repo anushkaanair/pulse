@@ -1,0 +1,44 @@
+import type { ChangesPoll, ChangesResponse, FaultConfig, Health, Quote, Sensitivity, SymbolSearchResult, Watchlist, WatchlistItem, WatchlistSummary } from "./api";
+
+const now = "2026-09-04T11:42:13.000Z";
+const symbols: SymbolSearchResult[] = [
+  { symbol: "TCS", name: "Tata Consultancy Services", exchange: "NSE" },
+  { symbol: "SUZLON", name: "Suzlon Energy", exchange: "NSE" },
+  { symbol: "RELIANCE", name: "Reliance Industries", exchange: "NSE" },
+  { symbol: "ZOMATO", name: "Zomato", exchange: "NSE" },
+  { symbol: "IDEA", name: "Vodafone Idea", exchange: "NSE" },
+  { symbol: "HDFCBANK", name: "HDFC Bank", exchange: "NSE" },
+];
+const quote = (symbol: string, price: string, stale = false): Quote => ({ symbol, price, prevClose: price, dayHigh: price, dayLow: price, volume: 1234000, asOf: now, receivedAt: now, ageSeconds: stale ? 212 : 1, stale, corrected: false, source: "simulated" });
+const item = (symbol: string, price: string, stale = false): WatchlistItem => ({ symbol, name: symbols.find((entry) => entry.symbol === symbol)?.name ?? symbol, sensitivity: "normal", quote: quote(symbol, price, stale), stale });
+let current: Watchlist = { id: "demo-watchlist", name: "Market watch", version: 1, items: [item("TCS", "3812.4500"), item("SUZLON", "71.2000"), item("RELIANCE", "2951.0000"), item("ZOMATO", "241.3000"), item("IDEA", "13.4500", true), item("HDFCBANK", "1642.1000")] };
+let faults: FaultConfig = {};
+let acknowledged = false;
+
+function changesData(): ChangesResponse {
+  const changes: ChangesResponse["items"] = current.items.map((entry, index) => ({
+    ...entry, quote: entry.quote ?? quote(entry.symbol, "0"),
+    change: index === 0 ? { kind: "move", pctSincePrev: "-3.09", zScore: -2.8, events: ["DAY_LOW_BREACHED"], confidence: "high", attention: 3.8, sensitivity: entry.sensitivity, why: "Moved −3.09%, unusual for TCS (2.8σ). Broke below the day's low." }
+      : index === 1 ? { kind: "event", pctSincePrev: "+7.07", zScore: 1.6, events: ["VOLUME_SPIKE", "DAY_HIGH_BREACHED"], confidence: "high", attention: 3.4, sensitivity: entry.sensitivity, why: "Up 7.07% on heavy volume. The volume is the story." }
+      : index === 2 ? { kind: "event", pctSincePrev: "+0.08", zScore: 0.1, events: ["CORRECTED"], confidence: "high", attention: 0.6, sensitivity: entry.sensitivity, why: "The exchange revised a price you may have seen." }
+      : { kind: "none", pctSincePrev: "+0.13", zScore: 0.2, events: [], confidence: "high", attention: 0.2, sensitivity: entry.sensitivity, why: "No meaningful change." },
+  }));
+  const meaningful = acknowledged ? 0 : 3;
+  return { snapshotId: "mock-snapshot-1", baseline: { takenAt: acknowledged ? now : null, kind: acknowledged ? "checkpoint" : "first-visit", awaySeconds: acknowledged ? 9000 : null }, asOf: now, feed: { status: faults.outage ? "stale" : "live", lagSeconds: faults.outage ? 212 : 1 }, digest: acknowledged ? "Nothing meaningful changed since you last looked." : "Since 2 hours ago: 3 things worth a look — TCS −3.09%, SUZLON on heavy volume, RELIANCE price corrected.", summary: { meaningful, total: current.items.length, stale: current.items.filter((entry) => entry.stale).length, newSinceLast: 0 }, items: changes };
+}
+
+export const mock = {
+  health: async (): Promise<Health> => ({ status: faults.outage ? "degraded" : "ok", db: "connected", feed: { status: faults.outage ? "stale" : "live", lastTickAt: now, lagSeconds: faults.outage ? 212 : 1 } }),
+  searchSymbols: async (q: string) => symbols.filter((entry) => `${entry.symbol} ${entry.name}`.toLowerCase().includes(q.toLowerCase())),
+  createWatchlist: async (name: string) => { current = { id: crypto.randomUUID(), name, version: 1, items: [] }; acknowledged = false; return current; },
+  watchlists: async (): Promise<WatchlistSummary[]> => [{ id: current.id, name: current.name, version: current.version, itemCount: current.items.length, updatedAt: now }],
+  watchlist: async (id: string) => { if (id !== current.id) throw new Error("Watchlist not found"); return current; },
+  setSensitivity: async (id: string, symbol: string, sensitivity: Sensitivity) => { await mock.watchlist(id); current = { ...current, version: current.version + 1, items: current.items.map((entry) => entry.symbol === symbol ? { ...entry, sensitivity } : entry) }; return current; },
+  addItem: async (id: string, symbol: string) => { await mock.watchlist(id); if (!symbols.some((entry) => entry.symbol === symbol)) throw new Error("Unknown symbol"); if (!current.items.some((entry) => entry.symbol === symbol)) current = { ...current, version: current.version + 1, items: [...current.items, item(symbol, "0.0000")] }; return current; },
+  removeItem: async (id: string, symbol: string) => { await mock.watchlist(id); current = { ...current, version: current.version + 1, items: current.items.filter((entry) => entry.symbol !== symbol) }; return current; },
+  replaceItems: async (id: string, requested: string[], version: number) => { await mock.watchlist(id); if (version !== current.version) throw new Error("VERSION_CONFLICT"); current = { ...current, version: current.version + 1, items: requested.map((symbol) => current.items.find((entry) => entry.symbol === symbol) ?? item(symbol, "0.0000")) }; return current; },
+  changes: async (_id: string, _limit: number, etag?: string): Promise<ChangesPoll> => etag === "mock-snapshot-1" ? { data: null, etag, notModified: true } : { data: changesData(), etag: "mock-snapshot-1", notModified: false },
+  checkpoint: async (_id: string, _snapshotId: string) => { acknowledged = true; return { takenAt: now }; },
+  quotes: async (requested: string[]) => current.items.filter((entry) => requested.includes(entry.symbol)).flatMap((entry) => entry.quote ? [entry.quote] : []),
+  setFaults: async (config: FaultConfig) => { faults = { ...faults, ...config }; return { active: faults }; },
+};
