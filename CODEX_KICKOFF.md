@@ -8,6 +8,11 @@ Read these first, fully, before writing any code:
   truth; never invent fields), section 9 is your ordered task list, section
   6 lists the states you must render.
 - `INTERPRETATION.md` — what we're building and why.
+- `DESIGN_SYSTEM.md` — this carries equal weight to the API contract. Visual
+  quality is being graded; "functional but generic" is not good enough.
+  Follow the typography, color, spacing, and component specs exactly —
+  don't default to a generic SaaS look (no indigo/violet gradients, no
+  default shadcn look untouched). Read it fully before building any screen.
 
 Start with section 9 steps 1–4:
 1. Scaffold `frontend/` with create-next-app (App Router, TypeScript,
