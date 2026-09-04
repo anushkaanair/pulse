@@ -86,29 +86,117 @@ export default function WatchlistPage() {
   const toggleSort = (key: typeof sort.key) => setSort((s) => s.key === key ? { key, dir: (s.dir * -1) as 1 | -1 } : { key, dir: key === "symbol" ? 1 : -1 });
   const arrow = (key: typeof sort.key) => sort.key === key ? (sort.dir === 1 ? " ↑" : " ↓") : "";
 
-  return <main className="min-h-screen"><FeedStatusBar status={changes.feed.status} lagSeconds={changes.feed.lagSeconds} /><div className="mx-auto max-w-[880px] px-4 py-8 sm:px-8"><header className="flex items-center justify-between"><div><Link href="/" className="text-xs text-[var(--muted)] underline underline-offset-4 hover:text-[var(--ink)]">Watchlists</Link><h1 className="mt-2 text-[28px] font-medium tracking-tight">{watchlist.name}</h1><Link href={`/w/${id}/history`} className="mt-1 inline-block text-xs text-[var(--muted)] underline underline-offset-4 hover:text-[var(--ink)]">History</Link></div><button onClick={markSeen} disabled={marking} className="border border-[var(--ink)] px-3 py-2 text-sm disabled:opacity-40 enabled:hover:bg-black/5">{marking ? "Marking…" : "Mark as seen"}</button></header>
-    <section className="mt-8"><p className="text-xs tracking-[0.16em] text-[var(--amber)] uppercase">Since you last looked</p><p className="mt-3 max-w-3xl text-xl font-medium leading-7">{changes.digest}</p><p className="mt-2 text-xs text-[var(--muted)]">{changes.baseline.kind === "first-visit" ? "First visit · this becomes your baseline." : `You were away ${away(changes.baseline.awaySeconds)} · ${changes.summary.meaningful} of ${changes.summary.total} worth a look`}</p>
-      {changes.summary.meaningful === 0 ? <p className="mt-6 text-sm text-[var(--muted)]">Nothing meaningful changed since {changes.baseline.takenAt ? new Date(changes.baseline.takenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "your last visit"}.</p> : <div className="mt-6 grid gap-3 md:grid-cols-2">{meaningful.map((item) => <ChangeCard key={item.symbol} item={item} />)}</div>}</section>
-    <section className="mt-12"><div className="flex items-baseline justify-between gap-4"><div><p className="text-xs tracking-[0.16em] text-[var(--muted)] uppercase">Full list</p><h2 className="mt-2 text-xl font-medium">Everything you track</h2></div><div className="flex items-center gap-4"><span className="text-xs text-[var(--muted)]">{watchlist.items.length} symbols</span><AddSymbol watchlistId={id} onAdded={setWatchlist} /></div></div><button onClick={() => { setEditing((value) => !value); setSymbolsText(watchlist.items.map((item) => item.symbol).join(", ")); }} className="mt-4 text-xs text-[var(--muted)] underline underline-offset-4 hover:text-[var(--ink)]">{editing ? "Close bulk edit" : "Bulk edit symbols"}</button>{editing ? <div className="mt-3 flex gap-2"><input value={symbolsText} onChange={(event) => setSymbolsText(event.target.value)} aria-label="Symbols, comma separated" className="min-w-0 flex-1 border-b border-[var(--line)] bg-transparent py-2 text-sm outline-none" /><button onClick={() => void saveBulk()} className="border border-[var(--ink)] px-3 py-2 text-sm hover:bg-black/5">Save list</button></div> : null}{watchlist.items.length === 0 ? <p className="mt-5 border-y border-[var(--line)] py-6 text-sm text-[var(--muted)]">This watchlist is empty. Add a symbol to start a baseline.</p> : <>
-      <div className="mt-5 flex gap-4 text-[11px] tracking-wide text-[var(--muted)] uppercase">Sort:{(["symbol", "price", "change", "volume"] as const).map((k) => <button key={k} onClick={() => toggleSort(k)} className={`hover:text-[var(--ink)] ${sort.key === k ? "text-[var(--ink)]" : ""}`}>{k}{arrow(k)}</button>)}</div>
-      {watchlist.items.length > VIRTUALIZE_ABOVE ? (
-      <VirtualizedRows items={sortedItems} changes={changes} sparklines={sparklines} id={id} refreshWatchlist={refreshWatchlist} />
-    ) : (
-      <ul className="mt-3 divide-y divide-[var(--line)] border-y border-[var(--line)]">
-        {sortedItems.map((item) => (
-          <li key={item.symbol}>
-            <WatchlistRow
-              item={item}
-              change={changes.items.find((entry) => entry.symbol === item.symbol)?.change}
-              sparkline={sparklines[item.symbol]}
-              onSensitivity={(choice) => void refreshWatchlist(() => api.setSensitivity(id, item.symbol, choice))}
-              onRemove={() => void refreshWatchlist(() => api.removeItem(id, item.symbol))}
-            />
-          </li>
-        ))}
-      </ul>
-    )}</>}</section>
-  </div>{conflict ? <ConflictModal theirs={conflict.theirs} mine={conflict.mine} onKeepMine={() => void saveBulk(conflict.mine, conflict.version)} onKeepTheirs={() => { setWatchlist((current) => current ? { ...current, version: conflict.version, items: conflict.theirs } : current); setConflict(undefined); setEditing(false); }} onMerge={() => void saveBulk([...new Set([...conflict.theirs.map((item) => item.symbol), ...conflict.mine])], conflict.version)} /> : null}</main>;
+  return (
+    <main className="min-h-screen bg-[var(--ground)]">
+      <FeedStatusBar status={changes.feed.status} lagSeconds={changes.feed.lagSeconds} />
+      <div className="mx-auto max-w-7xl px-4 py-8 grid grid-cols-1 lg:grid-cols-[1fr_350px] gap-8">
+        
+        {/* Left Column - Main Content */}
+        <div className="min-w-0">
+          {/* Since You Last Looked */}
+          <section className="mb-10">
+            <h2 className="text-xl font-medium mb-1 tracking-tight text-[var(--ink-dark)]">Most meaningful changes</h2>
+            <p className="text-sm text-[var(--muted)] mb-6">{changes.digest}</p>
+            {changes.summary.meaningful === 0 ? (
+               <p className="text-sm text-[var(--muted)] bg-[var(--surface)] p-6 rounded-xl border border-[var(--line)]">Nothing meaningful changed since {changes.baseline.takenAt ? new Date(changes.baseline.takenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "your last visit"}.</p>
+            ) : (
+               <div className="flex gap-4 overflow-x-auto pb-4 hide-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
+                 {meaningful.map((item) => <ChangeCard key={item.symbol} item={item} />)}
+               </div>
+            )}
+          </section>
+
+          {/* Full List */}
+          <section>
+            <div className="flex items-center gap-4 mb-4">
+               <h2 className="text-xl font-medium tracking-tight text-[var(--ink-dark)]">All tracked stocks</h2>
+               <div className="hidden sm:flex gap-2">
+                 {(["symbol", "price", "change", "volume"] as const).map((k) => (
+                   <button key={k} onClick={() => toggleSort(k)} className={`px-4 py-1.5 rounded-full border text-sm transition-colors ${sort.key === k ? "border-[var(--groww)] text-[var(--groww)] bg-[var(--groww)]/10" : "border-[var(--line)] text-[var(--muted)] hover:border-[var(--ink-dark)]"}`}>{k.charAt(0).toUpperCase() + k.slice(1)}{arrow(k)}</button>
+                 ))}
+               </div>
+            </div>
+            
+            <div className="bg-[var(--surface)] border border-[var(--line)] rounded-xl overflow-hidden">
+               <div className="hidden md:flex md:items-center md:gap-x-4 px-4 py-3 border-b border-[var(--line)] text-xs text-[var(--muted)]">
+                 <div className="md:min-w-28 md:flex-1">Company</div>
+                 <div className="md:min-w-24 md:text-right">Market Price</div>
+                 <div className="md:w-16 md:text-right">Volume</div>
+                 <div className="flex-1 max-w-[120px] text-center">52W Range</div>
+                 <div className="w-16"></div>
+                 <div className="w-[150px]"></div>
+               </div>
+               
+               {watchlist.items.length === 0 ? (
+                 <p className="p-8 text-center text-sm text-[var(--muted)]">This watchlist is empty. Add a symbol to start a baseline.</p>
+               ) : watchlist.items.length > VIRTUALIZE_ABOVE ? (
+                 <VirtualizedRows items={sortedItems} changes={changes} sparklines={sparklines} id={id} refreshWatchlist={refreshWatchlist} />
+               ) : (
+                 <div className="divide-y divide-[var(--line)] px-4">
+                   {sortedItems.map((item) => (
+                     <WatchlistRow
+                       key={item.symbol}
+                       item={item}
+                       change={changes.items.find((entry) => entry.symbol === item.symbol)?.change}
+                       sparkline={sparklines[item.symbol]}
+                       onSensitivity={(choice) => void refreshWatchlist(() => api.setSensitivity(id, item.symbol, choice))}
+                       onRemove={() => void refreshWatchlist(() => api.removeItem(id, item.symbol))}
+                     />
+                   ))}
+                 </div>
+               )}
+            </div>
+          </section>
+        </div>
+
+        {/* Right Column - Sidebar */}
+        <aside className="flex flex-col gap-6">
+          {/* Watchlist Summary */}
+          <div className="bg-[var(--surface)] border border-[var(--line)] rounded-xl p-6 shadow-sm">
+            <h3 className="text-lg font-medium mb-6 text-[var(--ink-dark)]">Watchlist Summary</h3>
+            <div className="mb-6">
+               <p className="text-sm text-[var(--muted)] mb-1">Total Tracked</p>
+               <p className="text-[32px] font-medium tracking-tight text-[var(--ink-dark)]">{watchlist.items.length}</p>
+            </div>
+            <div className="flex justify-between items-center mb-2 text-sm">
+               <span className="text-[var(--muted)]">Meaningful changes</span>
+               <span className="font-medium text-[var(--groww)]">{changes.summary.meaningful}</span>
+            </div>
+            <div className="flex justify-between items-center mb-8 text-sm">
+               <span className="text-[var(--muted)]">Time away</span>
+               <span className="font-medium text-[var(--ink-dark)]">{changes.baseline.kind === "first-visit" ? "First visit" : (away(changes.baseline.awaySeconds) ?? "—")}</span>
+            </div>
+            <button onClick={markSeen} disabled={marking} className="w-full bg-[var(--groww)] text-white font-medium py-3 rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity">
+               {marking ? "Marking…" : "Mark as seen"}
+            </button>
+          </div>
+
+          {/* Tools Widget */}
+          <div className="bg-[var(--surface)] border border-[var(--line)] rounded-xl p-6 shadow-sm">
+            <h3 className="text-lg font-medium mb-5 text-[var(--ink-dark)]">Tools & Settings</h3>
+            <div className="flex flex-col gap-5">
+              <AddSymbol watchlistId={id} onAdded={setWatchlist} />
+              
+              <div className="border-t border-[var(--line)] pt-5">
+                <button onClick={() => { setEditing((value) => !value); setSymbolsText(watchlist.items.map((item) => item.symbol).join(", ")); }} className="text-left text-sm text-[var(--groww)] font-medium flex items-center gap-2">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                  {editing ? "Close bulk edit" : "Bulk edit symbols"}
+                </button>
+                
+                {editing ? (
+                  <div className="mt-3 flex flex-col gap-3">
+                    <textarea value={symbolsText} onChange={(event) => setSymbolsText(event.target.value)} rows={3} className="w-full border border-[var(--line)] rounded-lg bg-[var(--ground)] p-3 text-sm outline-none focus:border-[var(--groww)] transition-colors" />
+                    <button onClick={() => void saveBulk()} className="bg-[var(--ink-dark)] text-white px-4 py-2 text-sm font-medium rounded-lg hover:opacity-90 transition-opacity">Save list</button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+      {conflict ? <ConflictModal theirs={conflict.theirs} mine={conflict.mine} onKeepMine={() => void saveBulk(conflict.mine, conflict.version)} onKeepTheirs={() => { setWatchlist((current) => current ? { ...current, version: conflict.version, items: conflict.theirs } : current); setConflict(undefined); setEditing(false); }} onMerge={() => void saveBulk([...new Set([...conflict.theirs.map((item) => item.symbol), ...conflict.mine])], conflict.version)} /> : null}
+    </main>
+  );
 }
 
 // Only mounted above VIRTUALIZE_ABOVE items. A fixed-height scroll

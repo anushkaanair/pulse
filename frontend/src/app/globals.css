@@ -1,21 +1,23 @@
 @import "tailwindcss";
 
 :root {
-  --ground: #fafaf9;
-  --ink: #14171a;
-  --muted: color-mix(in srgb, var(--ink) 60%, transparent);
-  --line: color-mix(in srgb, var(--ink) 14%, transparent);
-  --amber: #b8862b;
-  --green: #1b8a5a;
-  --red: #c4432f;
+  --ground: #f6f6f7;
+  --surface: #ffffff;
+  --ink: #44475b;
+  --ink-dark: #14171a;
+  --muted: #7c7e8c;
+  --line: #eceff1;
+  --groww: #00d09c;
+  --green: #00d09c;
+  --red: #eb5b3c;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root { --ground: #0b0d0e; --ink: #edeef0; }
+  :root { --ground: #0b0d0e; --surface: #121212; --ink: #edeef0; --ink-dark: #ffffff; --muted: #a0a0a0; --line: #333333; }
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--ground); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+body { margin: 0; background: var(--ground); color: var(--ink-dark); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 button, input { font: inherit; }
 .numbers { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-variant-numeric: tabular-nums; }
 
