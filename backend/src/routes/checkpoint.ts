@@ -10,9 +10,10 @@ const Body = z.object({ snapshotId: z.string().uuid() });
 export function checkpointRouter(pool: Pool) {
   const r = Router();
   r.post("/api/watchlists/:id/checkpoint", async (req, res, next) => {
+    const client = await pool.connect();
     try {
       const { snapshotId } = Body.parse(req.body);
-      const snap = await pool.query<{ user_id: string; watchlist_id: string; taken_at: Date }>(
+      const snap = await client.query<{ user_id: string; watchlist_id: string; taken_at: Date }>(
         "SELECT user_id, watchlist_id, taken_at FROM snapshots WHERE id = $1",
         [snapshotId],
       );
@@ -21,7 +22,8 @@ export function checkpointRouter(pool: Pool) {
       if (s.user_id !== req.userId || s.watchlist_id !== req.params.id) {
         throw new AppError(409, "SNAPSHOT_MISMATCH", "Snapshot belongs to a different user or watchlist");
       }
-      await pool.query(
+      await client.query("BEGIN");
+      await client.query(
         `INSERT INTO checkpoints (user_id, watchlist_id, snapshot_id, taken_at)
          VALUES ($1, $2, $3, $4)
          ON CONFLICT (user_id, watchlist_id) DO UPDATE
@@ -29,9 +31,27 @@ export function checkpointRouter(pool: Pool) {
          WHERE checkpoints.taken_at <= EXCLUDED.taken_at`, // never move "seen" backwards
         [req.userId, req.params.id, snapshotId, s.taken_at],
       );
+      // Append to the visit timeline — but skip if this exact snapshot is
+      // already the most recent entry, so a double-click doesn't create two
+      // near-identical "visits" a few milliseconds apart.
+      const last = await client.query<{ snapshot_id: string }>(
+        `SELECT snapshot_id FROM checkpoint_history
+          WHERE user_id = $1 AND watchlist_id = $2 ORDER BY taken_at DESC LIMIT 1`,
+        [req.userId, req.params.id],
+      );
+      if (last.rows[0]?.snapshot_id !== snapshotId) {
+        await client.query(
+          `INSERT INTO checkpoint_history (user_id, watchlist_id, snapshot_id, taken_at) VALUES ($1, $2, $3, $4)`,
+          [req.userId, req.params.id, snapshotId, s.taken_at],
+        );
+      }
+      await client.query("COMMIT");
       res.status(201).json({ takenAt: new Date(s.taken_at).toISOString() });
     } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
       next(err);
+    } finally {
+      client.release();
     }
   });
   return r;

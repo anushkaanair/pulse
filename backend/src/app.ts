@@ -10,7 +10,9 @@ import { checkpointRouter } from "./routes/checkpoint.js";
 import { healthRouter } from "./routes/health.js";
 import { quotesRouter } from "./routes/quotes.js";
 import { simRouter } from "./routes/sim.js";
+import { sparklinesRouter } from "./routes/sparklines.js";
 import { symbolsRouter } from "./routes/symbols.js";
+import { timelineRouter } from "./routes/timeline.js";
 import { watchlistsRouter } from "./routes/watchlists.js";
 
 export function createApp(pool: Pool, ingestor: Ingestor) {
@@ -40,6 +42,8 @@ export function createApp(pool: Pool, ingestor: Ingestor) {
   app.use(watchlistsRouter(pool));
   app.use(changesRouter(pool, ingestor));
   app.use(checkpointRouter(pool));
+  app.use(sparklinesRouter(pool));
+  app.use(timelineRouter(pool));
 
   app.use((_req, res) => res.status(404).json({ error: "Not found", code: "NOT_FOUND" }));
   app.use(errorHandler);

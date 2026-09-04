@@ -72,3 +72,18 @@ why this one.
 **What:** GET /health returns an extra `ingest: {received, applied, ignored, historyInserted, errors}` object not in the original §5 spec.
 **Alternatives:** Remove it to match the original contract exactly, or move it to a separate `/health/debug` route.
 **Why:** It's genuinely useful operator/debugging visibility (it's what the torture test and scale-check scripts read to verify duplicates/out-of-order data were actually rejected), and the frontend never needs it. Kept, documented properly instead of removed — found and correctly reported as a contract mismatch by Codex integration-testing against the live backend rather than trusting the docs, exactly the kind of check that's supposed to happen at this stage.
+
+## Reopened two scope cuts: sparkline and visit timeline
+**What:** Added `GET /watchlists/:id/sparklines` (batched last-N price points per symbol from `quote_history`) and a visit timeline (`checkpoint_history` table + `/timeline`, `/timeline/:snapshotId/diff`).
+**Alternatives:** Leave both as "designed for, not built" per the original scope cuts.
+**Why:** Time allowed for it, and both are genuine product value, not padding — the sparkline gives at-a-glance trend context the row list otherwise can't; the timeline directly answers "what changed between Tuesday and Wednesday specifically," which nothing else in the product does. Reopening a documented cut is itself a decision worth recording, not silently expanding scope.
+
+## Timeline diff is a plain price comparison, not the statistical engine
+**What:** `/timeline/:snapshotId/diff` returns raw before/after price and %, sorted by magnitude — it does NOT reuse the z-score "meaningful" engine from `/changes`.
+**Alternatives:** Run `computeChanges` between the two historical snapshots for a consistent "meaningful" definition everywhere.
+**Why:** `computeChanges` is built around one specific relationship — a live "now" versus one checkpoint, with elapsed-time-aware significance. Diffing two arbitrary past snapshots doesn't have a clean "elapsed ticks since" story (the two visits could be minutes or weeks apart, and volatility context at each point is a different question). Forcing it through the same engine would mean fabricating assumptions rather than reusing something proven. A plain, honest price diff is simpler, correct, and still genuinely useful.
+
+## checkpoint_history logs every promotion except exact repeats
+**What:** Promoting the same snapshotId twice in a row doesn't create two timeline entries.
+**Alternatives:** Log every promotion unconditionally.
+**Why:** A double-click or a retried request shouldn't manufacture a fake "second visit" a few milliseconds after the first — same idempotency principle applied elsewhere in this codebase (item add/remove).

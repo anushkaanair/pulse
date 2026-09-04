@@ -160,6 +160,20 @@ Checkpoints are keyed by **user**, not device → state persists across devices
 by construction. Old `snapshots` rows can be pruned by a cron; not needed for
 the hackathon.
 
+```sql
+-- Append-only log of every promotion. `checkpoints` above only ever holds
+-- the LATEST one (overwritten each time), so it can't answer "what did I
+-- see on Tuesday vs Wednesday" — this table is what the visit timeline
+-- feature reads from.
+CREATE TABLE checkpoint_history (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      text NOT NULL,
+  watchlist_id uuid NOT NULL REFERENCES watchlists(id) ON DELETE CASCADE,
+  snapshot_id  uuid NOT NULL REFERENCES snapshots(id),
+  taken_at     timestamptz NOT NULL
+);
+```
+
 ## 5. API contract
 
 All responses JSON. Errors: `{ "error": string, "code": string }`.
@@ -245,6 +259,23 @@ GET  /api/quotes?symbols=TCS,INFY
 Quote = { symbol, price, prevClose, dayHigh, dayLow, volume,
           asOf:iso, receivedAt:iso, ageSeconds:number, stale:boolean,
           corrected:boolean, source }
+
+GET  /api/watchlists/:id/sparklines?limit=30
+  200 { [symbol]: [ { asOf:iso, price:string } ] }   -- ascending by asOf, one query for every symbol
+  404 NOT_FOUND
+
+GET  /api/watchlists/:id/timeline?limit=30
+  200 { visits: [ { snapshotId, takenAt:iso } ] }    -- every past "Mark as seen", newest first
+  404 NOT_FOUND
+
+GET  /api/watchlists/:id/timeline/:snapshotId/diff?against=<snapshotId>
+  -- `against` optional; defaults to the visit immediately before this one
+  200 { takenAt:iso, comparedTo:iso|null,
+        items:[ { symbol, name, priceBefore:string|null, priceAfter:string|null,
+                   pct:string|null, status:"tracked"|"added"|"removed" } ] }
+        -- sorted by |pct| desc. Deliberately a plain price diff, NOT the
+        -- statistical "meaningful" engine — see the note below section 6.
+  404 NOT_FOUND | SNAPSHOT_NOT_FOUND
 
 -- Demo/fault injection (only when SIM_ADMIN=true):
 POST /api/_sim/faults
