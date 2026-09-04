@@ -29,6 +29,12 @@ export interface ChangesResponse {
 export interface ConflictResponse { error: string; code: "VERSION_CONFLICT"; current: { version: number; items: WatchlistItem[] } }
 export interface FaultConfig { outage?: boolean; delayMs?: number; outOfOrderPct?: number; duplicatePct?: number; correctionPct?: number }
 export interface ChangesPoll { data: ChangesResponse | null; etag: string | null; notModified: boolean }
+export interface SparklinePoint { asOf: string; price: string }
+export type Sparklines = Record<string, SparklinePoint[]>;
+export interface TimelineVisit { snapshotId: string; takenAt: string }
+export interface TimelineResponse { visits: TimelineVisit[] }
+export interface TimelineDiffItem { symbol: string; name: string; priceBefore: string | null; priceAfter: string | null; pct: string | null; status: "tracked" | "added" | "removed" }
+export interface TimelineDiffResponse { takenAt: string; comparedTo: string | null; items: TimelineDiffItem[] }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
@@ -77,4 +83,7 @@ export const api = {
   checkpoint: (id: string, snapshotId: string) => USE_MOCK ? import("./mock").then(({ mock }) => mock.checkpoint(id, snapshotId)) : request<{ takenAt: string }>(`/api/watchlists/${id}/checkpoint`, { method: "POST", body: JSON.stringify({ snapshotId }) }).then(({ data }) => data!),
   quotes: (symbols: string[]) => USE_MOCK ? import("./mock").then(({ mock }) => mock.quotes(symbols)) : request<Quote[]>(`/api/quotes?symbols=${encodeURIComponent(symbols.join(","))}`).then(({ data }) => data!),
   setFaults: (config: FaultConfig) => USE_MOCK ? import("./mock").then(({ mock }) => mock.setFaults(config)) : request<{ active: FaultConfig }>("/api/_sim/faults", { method: "POST", body: JSON.stringify(config) }).then(({ data }) => data!),
+  sparklines: (id: string, limit = 30) => USE_MOCK ? import("./mock").then(({ mock }) => mock.sparklines(id, limit)) : request<Sparklines>(`/api/watchlists/${id}/sparklines?limit=${limit}`).then(({ data }) => data!),
+  timeline: (id: string, limit = 30) => USE_MOCK ? import("./mock").then(({ mock }) => mock.timeline(id, limit)) : request<TimelineResponse>(`/api/watchlists/${id}/timeline?limit=${limit}`).then(({ data }) => data!),
+  timelineDiff: (id: string, snapshotId: string, against?: string) => USE_MOCK ? import("./mock").then(({ mock }) => mock.timelineDiff(id, snapshotId, against)) : request<TimelineDiffResponse>(`/api/watchlists/${id}/timeline/${snapshotId}/diff${against ? `?against=${against}` : ""}`).then(({ data }) => data!),
 };

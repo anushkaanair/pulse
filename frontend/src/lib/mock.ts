@@ -1,4 +1,4 @@
-import { ApiRequestError, type ChangesPoll, type ChangesResponse, type ConflictResponse, type FaultConfig, type Health, type Quote, type Sensitivity, type SymbolSearchResult, type Watchlist, type WatchlistItem, type WatchlistSummary } from "./api";
+import { ApiRequestError, type ChangesPoll, type ChangesResponse, type ConflictResponse, type FaultConfig, type Health, type Quote, type Sensitivity, type Sparklines, type SymbolSearchResult, type TimelineDiffResponse, type TimelineResponse, type Watchlist, type WatchlistItem, type WatchlistSummary } from "./api";
 
 const now = "2026-09-04T11:42:13.000Z";
 const symbols: SymbolSearchResult[] = [
@@ -41,4 +41,35 @@ export const mock = {
   checkpoint: async (_id: string, _snapshotId: string) => { acknowledged = true; return { takenAt: now }; },
   quotes: async (requested: string[]) => current.items.filter((entry) => requested.includes(entry.symbol)).flatMap((entry) => entry.quote ? [entry.quote] : []),
   setFaults: async (config: FaultConfig) => { faults = { ...faults, ...config }; return { active: faults }; },
+  sparklines: async (_id: string, limit: number): Promise<Sparklines> => {
+    const out: Sparklines = {};
+    for (const entry of current.items) {
+      if (!entry.quote) continue;
+      const base = Number(entry.quote.price);
+      // Deterministic little wiggle so the shape looks organic without a real feed.
+      out[entry.symbol] = Array.from({ length: Math.min(limit, 12) }, (_, i) => ({
+        asOf: new Date(Date.parse(now) - (12 - i) * 60_000).toISOString(),
+        price: (base * (1 + Math.sin(i * 0.9 + entry.symbol.length) * 0.01)).toFixed(4),
+      }));
+    }
+    return out;
+  },
+  timeline: async (_id: string, limit: number): Promise<TimelineResponse> => ({
+    visits: [
+      { snapshotId: "mock-visit-2", takenAt: now },
+      { snapshotId: "mock-visit-1", takenAt: new Date(Date.parse(now) - 2 * 3600_000).toISOString() },
+    ].slice(0, limit),
+  }),
+  timelineDiff: async (_id: string, snapshotId: string, _against?: string): Promise<TimelineDiffResponse> => ({
+    takenAt: snapshotId === "mock-visit-1" ? new Date(Date.parse(now) - 2 * 3600_000).toISOString() : now,
+    comparedTo: snapshotId === "mock-visit-1" ? null : new Date(Date.parse(now) - 2 * 3600_000).toISOString(),
+    items: current.items.map((entry, i) => ({
+      symbol: entry.symbol,
+      name: entry.name,
+      priceBefore: entry.quote ? (Number(entry.quote.price) * 0.98).toFixed(4) : null,
+      priceAfter: entry.quote?.price ?? null,
+      pct: entry.quote ? "2.00" : null,
+      status: i === current.items.length - 1 ? "added" : "tracked",
+    })),
+  }),
 };
