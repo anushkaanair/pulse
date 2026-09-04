@@ -4,24 +4,23 @@ For the HackerEarth submission form field "200-word Product Pitch."
 
 ---
 
-We built a per-user diff engine, not a price table. Create and manage
-watchlists, see live prices, and — the part that's actually graded — return
-later to a precise answer for "what deserves my attention now?"
+We built a per-user diff engine, not a price table. Return later to a
+precise, ranked answer for "what deserves my attention now" — a 3D deck
+where depth mirrors how much each move actually matters, not a flood of
+everything that moved.
 
-Every "last seen" state is a checkpoint: an exact snapshot of what you were
-shown, so returning users get a real delta, immune to a feed that later
-rewrites the past. "Meaningful" isn't a fixed threshold — it's a z-score
-against each stock's own volatility, scaled by how long you've been away,
-with a per-symbol quiet/loud override so alert fatigue doesn't creep in. A
-one-line digest — "3 things worth a look, 12 others: nothing meaningful" —
-replaces scanning forty rows.
+Every "last seen" is an exact checkpoint, immune to a feed that rewrites
+the past. "Meaningful" is a residual z-score: a stock's move minus what its
+sector did, against a market-index proxy in the same fault-injected
+pipeline as any stock — a move fully explained by beta isn't news. A
+second, visit-independent clock tracks "quiet for weeks, just woke up"; a
+correction to an already-shown move is a visible retraction, never a
+silent delete. An attention budget caps the deck, so a volatile day is a
+triage, not a flood.
 
-The feed lies a little, on purpose: our default provider injects delay,
-duplicates, out-of-order data, and corrections, because "unreliable
-dependencies" was explicit in the brief. A monotonic upsert enforced in SQL
-means a late tick can never regress a price. We prove it, not just claim it
-— `npm run torture` spawns the real server under load, kills it mid-run
-with SIGKILL, and checks 21 invariants against an independent oracle.
-
-Three real bugs were found by that testing and fixed before submission —
-logged, with reasoning, in `DECISIONS.md`.
+The feed lies on purpose — delay, duplicates, out-of-order, corrections —
+because "unreliable dependencies" was explicit in the brief. A monotonic
+SQL upsert means a late tick never regresses a price. We prove it:
+`npm run torture` spawns the real server, kills it mid-run with SIGKILL,
+and checks 20+ invariants against an independent oracle. That testing
+keeps finding real bugs, logged with reasoning in `DECISIONS.md`.

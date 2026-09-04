@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ChangeCard } from "@/components/ChangeCard";
 import { AddSymbol } from "@/components/AddSymbol";
+import { AttentionDeck } from "@/components/AttentionDeck";
 import { ConflictModal } from "@/components/ConflictModal";
 import { FeedStatusBar } from "@/components/FeedStatusBar";
+import { MarketTrends } from "@/components/MarketTrends";
 import { WatchlistRow } from "@/components/WatchlistRow";
 import { api, ApiRequestError, type ChangesResponse, type ConflictResponse, type Sensitivity, type Sparklines, type Watchlist, type WatchlistItem } from "@/lib/api";
 
@@ -69,11 +70,14 @@ export default function WatchlistPage() {
 
   if (error) { const message = error instanceof ApiRequestError ? `${error.response.error} (${error.response.code})` : "Could not load this watchlist."; return <main className="mx-auto max-w-[880px] px-4 py-12"><Link href="/" className="text-sm underline underline-offset-4 hover:text-[var(--ink)]">Back to watchlists</Link><p className="mt-8 text-sm text-[var(--red)]">{message}</p></main>; }
   if (!watchlist || !changes) return <main className="mx-auto max-w-[880px] px-4 py-12 text-sm text-[var(--muted)]">Loading your catch-up…</main>;
+
   // Ranked, not thresholded: `changes.items` already arrives sorted by the
   // engine's own attention score, so the first `attentionBudget` of them
   // ARE the ones that most deserve a first glance. Triage, not a flood —
   // the rest are still real and still visible, just in the full list below
-  // rather than competing for attention above it.
+  // rather than competing for attention above it. The deck below NEVER
+  // falls back to "largest recent movement" filler when nothing is
+  // meaningful — "nothing meaningful changed" stays a real empty state.
   const meaningful = changes.items.filter((item) => item.change.kind !== "none");
   const rankedForAttention = meaningful.slice(0, changes.attentionBudget);
   const overflow = meaningful.length - rankedForAttention.length;
@@ -94,25 +98,30 @@ export default function WatchlistPage() {
   const arrow = (key: typeof sort.key) => sort.key === key ? (sort.dir === 1 ? " ↑" : " ↓") : "";
 
   return (
-    <main className="min-h-screen bg-[var(--ground)]">
+    <main className="min-h-screen">
       <FeedStatusBar status={changes.feed.status} lagSeconds={changes.feed.lagSeconds} />
       <div className="mx-auto max-w-7xl px-4 pt-6">
-        <Link href="/" className="text-sm text-[var(--muted)] hover:text-[var(--ink-dark)] underline-offset-4 hover:underline">← Back to watchlists</Link>
-        <h1 className="text-2xl font-medium tracking-tight text-[var(--ink-dark)] mt-1">{watchlist.name}</h1>
+        <Link href="/" className="text-sm text-[var(--muted)] hover:text-[var(--ink)] underline-offset-4 hover:underline">← Back to watchlists</Link>
+        <div className="mt-1 flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">{watchlist.name}</h1>
+          {changes.summary.meaningful > 0
+            ? <span className="rounded-full bg-[var(--amber)]/15 px-2.5 py-0.5 text-[11px] font-medium text-[var(--amber)]">{changes.summary.meaningful} worth a look</span>
+            : <span className="rounded-full bg-[var(--green)]/15 px-2.5 py-0.5 text-[11px] font-medium text-[var(--green)]">Caught up</span>}
+        </div>
         <p className="text-sm text-[var(--muted)] mt-1">{watchlist.items.length} {watchlist.items.length === 1 ? "symbol" : "symbols"}</p>
       </div>
-      <div className="mx-auto max-w-7xl px-4 py-8 grid grid-cols-1 lg:grid-cols-[1fr_350px] gap-8">
+      <div className="mx-auto max-w-7xl px-4 py-8 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8">
 
         {/* Left Column - Main Content */}
         <div className="min-w-0">
           {/* A retraction is corrected, never silently deleted — shown as
-              its own small, explicit list, distinct from the ranked cards
+              its own small, explicit list, distinct from the ranked deck
               below. Almost always empty. */}
           {changes.retractions.length > 0 ? (
-            <div className="mb-6 rounded-xl border border-[var(--amber)]/30 bg-[var(--amber)]/5 p-4">
+            <div className="mb-6 rounded-2xl border border-[var(--amber)]/30 bg-[var(--amber)]/5 p-4">
               <p className="text-xs font-medium uppercase tracking-wide text-[var(--amber)] mb-2">Corrected since last shown</p>
               {changes.retractions.map((r) => (
-                <p key={r.symbol} className="text-sm text-[var(--ink-dark)]">
+                <p key={r.symbol} className="text-sm text-[var(--ink)]">
                   <span className="font-medium">{r.symbol}</span>&rsquo;s earlier move was revised{r.previousZ !== null ? ` (was ${Math.abs(r.previousZ).toFixed(1)}σ)` : ""} — no longer unusual for this stock.
                 </p>
               ))}
@@ -121,21 +130,12 @@ export default function WatchlistPage() {
 
           {/* Since You Last Looked */}
           <section className="mb-10">
-            <h2 className="text-xl font-medium mb-1 tracking-tight text-[var(--ink-dark)]">Most meaningful changes</h2>
+            <h2 className="text-xl font-medium mb-1 tracking-tight">Most meaningful changes</h2>
             <p className="text-sm text-[var(--muted)] mb-6">{changes.digest}</p>
             {changes.summary.meaningful === 0 ? (
-               <p className="text-sm text-[var(--muted)] bg-[var(--surface)] p-6 rounded-xl border border-[var(--line)]">Nothing meaningful changed since {changes.baseline.takenAt ? new Date(changes.baseline.takenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "your last visit"}.</p>
+               <p className="text-sm text-[var(--muted)] bg-[var(--surface)] p-6 rounded-2xl border border-[var(--line)]">Nothing meaningful changed since {changes.baseline.takenAt ? new Date(changes.baseline.takenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "your last visit"}.</p>
             ) : (
-               <div className="flex gap-4 overflow-x-auto pb-4 hide-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
-                 {rankedForAttention.map((item) => (
-                   <ChangeCard
-                     key={item.symbol}
-                     item={item}
-                     isTopMover={changes.topMover?.symbol === item.symbol}
-                     displaced={changes.topMover?.displaced}
-                   />
-                 ))}
-               </div>
+               <AttentionDeck items={rankedForAttention} sparklines={sparklines} topMover={changes.topMover} />
             )}
             {overflow > 0 ? (
               <p className="mt-2 text-xs text-[var(--muted)]">+{overflow} more meaningful, ranked lower — see the full list below.</p>
@@ -144,17 +144,20 @@ export default function WatchlistPage() {
 
           {/* Full List */}
           <section>
-            <div className="flex items-center gap-4 mb-4">
-               <h2 className="text-xl font-medium tracking-tight text-[var(--ink-dark)]">All tracked stocks</h2>
+            <div className="flex items-center gap-4 mb-4 flex-wrap">
+               <h2 className="text-xl font-medium tracking-tight">All tracked stocks</h2>
                <div className="hidden sm:flex gap-2">
                  {(["symbol", "price", "change", "volume"] as const).map((k) => (
-                   <button key={k} onClick={() => toggleSort(k)} className={`px-4 py-1.5 rounded-full border text-sm transition-colors ${sort.key === k ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent)]/10" : "border-[var(--line)] text-[var(--muted)] hover:border-[var(--ink-dark)]"}`}>{k.charAt(0).toUpperCase() + k.slice(1)}{arrow(k)}</button>
+                   <button key={k} onClick={() => toggleSort(k)} className="rounded-full border px-3.5 py-1 text-xs font-medium transition-colors" style={sort.key === k ? { borderColor: "var(--amber)", color: "var(--amber)", background: "rgba(240,180,41,.1)" } : { borderColor: "var(--line)", color: "var(--muted)" }}>{k.charAt(0).toUpperCase() + k.slice(1)}{arrow(k)}</button>
                  ))}
                </div>
+               <div className="ml-auto w-56">
+                 <AddSymbol watchlistId={id} onAdded={setWatchlist} />
+               </div>
             </div>
-            
-            <div className="bg-[var(--surface)] border border-[var(--line)] rounded-xl overflow-hidden">
-               <div className="hidden md:flex md:items-center md:gap-x-4 px-4 py-3 border-b border-[var(--line)] text-xs text-[var(--muted)]">
+
+            <div className="rounded-2xl border border-[var(--line)] overflow-hidden" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
+               <div className="hidden md:flex md:items-center md:gap-x-4 px-4 py-2.5 border-b border-[var(--line)] text-[10.5px] uppercase tracking-wide text-[var(--muted)]">
                  <div className="md:min-w-28 md:flex-1">Company</div>
                  <div className="md:min-w-24 md:text-right">Market Price</div>
                  <div className="md:w-16 md:text-right">Volume</div>
@@ -162,7 +165,7 @@ export default function WatchlistPage() {
                  <div className="w-16"></div>
                  <div className="w-[150px]"></div>
                </div>
-               
+
                {watchlist.items.length === 0 ? (
                  <p className="p-8 text-center text-sm text-[var(--muted)]">This watchlist is empty. Add a symbol to start a baseline.</p>
                ) : watchlist.items.length > VIRTUALIZE_ABOVE ? (
@@ -186,44 +189,52 @@ export default function WatchlistPage() {
         </div>
 
         {/* Right Column - Sidebar */}
-        <aside className="flex flex-col gap-6">
+        <aside className="flex flex-col gap-4">
           {/* Watchlist Summary */}
-          <div className="bg-[var(--surface)] border border-[var(--line)] rounded-xl p-6 shadow-sm">
-            <h3 className="text-lg font-medium mb-6 text-[var(--ink-dark)]">Watchlist Summary</h3>
-            <div className="mb-6">
+          <div className="rounded-2xl border border-[var(--line)] p-5" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)] mb-5">Watchlist Summary</h3>
+            <div className="mb-5">
                <p className="text-sm text-[var(--muted)] mb-1">Total Tracked</p>
-               <p className="text-[32px] font-medium tracking-tight text-[var(--ink-dark)]">{watchlist.items.length}</p>
+               <p className="numbers text-[30px] font-semibold tracking-tight">{watchlist.items.length}</p>
             </div>
-            <div className="flex justify-between items-center mb-2 text-sm">
+            <div className="flex justify-between items-center mb-2 text-[13px]">
                <span className="text-[var(--muted)]">Meaningful changes</span>
-               <span className="font-medium text-[var(--accent)]">{changes.summary.meaningful}</span>
+               <span className="numbers font-semibold" style={{ color: changes.summary.meaningful > 0 ? "var(--amber)" : "var(--ink)" }}>{changes.summary.meaningful}</span>
             </div>
-            <div className="flex justify-between items-center mb-8 text-sm">
+            <div className="flex justify-between items-center mb-6 text-[13px]">
                <span className="text-[var(--muted)]">Time away</span>
-               <span className="font-medium text-[var(--ink-dark)]">{changes.baseline.kind === "first-visit" ? "First visit" : (away(changes.baseline.awaySeconds) ?? "—")}</span>
+               <span className="font-medium">{changes.baseline.kind === "first-visit" ? "First visit" : (away(changes.baseline.awaySeconds) ?? "—")}</span>
             </div>
-            <button onClick={markSeen} disabled={marking} className="w-full bg-[var(--accent)] text-white font-medium py-3 rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity">
+            <button
+              onClick={markSeen} disabled={marking}
+              className="w-full rounded-xl py-2.5 text-[13px] font-semibold text-[#0b0d0e] disabled:opacity-40 transition-opacity"
+              style={{ background: "linear-gradient(140deg, var(--amber-2), var(--amber))" }}
+            >
                {marking ? "Marking…" : "Mark as seen"}
             </button>
           </div>
 
+          <MarketTrends items={changes.items} />
+
+          <Link href={`/w/${id}/history`} className="rounded-2xl border border-[var(--line)] p-5 text-sm text-[var(--muted)] hover:text-[var(--ink)] transition-colors" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
+            View visit history →
+          </Link>
+
           {/* Tools Widget */}
-          <div className="bg-[var(--surface)] border border-[var(--line)] rounded-xl p-6 shadow-sm">
-            <h3 className="text-lg font-medium mb-5 text-[var(--ink-dark)]">Tools & Settings</h3>
-            <div className="flex flex-col gap-5">
-              <AddSymbol watchlistId={id} onAdded={setWatchlist} />
-              
-              <div className="border-t border-[var(--line)] pt-5">
-                <button onClick={() => { setEditing((value) => !value); setSymbolsText(watchlist.items.map((item) => item.symbol).join(", ")); }} className="text-left text-sm text-[var(--accent)] font-medium flex items-center gap-2">
+          <div className="rounded-2xl border border-[var(--line)] p-5" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)] mb-4">Tools & Settings</h3>
+            <div className="flex flex-col gap-4">
+              <div className="border-t border-[var(--line)] pt-4">
+                <button onClick={() => { setEditing((value) => !value); setSymbolsText(watchlist.items.map((item) => item.symbol).join(", ")); }} className="text-left text-sm font-medium flex items-center gap-2" style={{ color: "var(--amber)" }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
                   {editing ? "Close bulk edit" : "Bulk edit symbols"}
                 </button>
-                
+
                 {editing ? (
                   <div className="mt-3 flex flex-col gap-3">
                     <label className="sr-only" htmlFor="bulk-symbols">Symbols, comma separated</label>
-                    <textarea id="bulk-symbols" value={symbolsText} onChange={(event) => setSymbolsText(event.target.value)} rows={3} className="w-full border border-[var(--line)] rounded-lg bg-[var(--ground)] p-3 text-sm outline-none focus:border-[var(--accent)] transition-colors" />
-                    <button onClick={() => void saveBulk()} className="bg-[var(--ink-dark)] text-white px-4 py-2 text-sm font-medium rounded-lg hover:opacity-90 transition-opacity">Save list</button>
+                    <textarea id="bulk-symbols" value={symbolsText} onChange={(event) => setSymbolsText(event.target.value)} rows={3} className="w-full rounded-xl border border-[var(--line-2)] bg-[var(--ground-2)] p-3 text-sm outline-none focus:border-[var(--amber)] transition-colors" />
+                    <button onClick={() => void saveBulk()} className="rounded-xl bg-[var(--ink)] px-4 py-2 text-sm font-medium text-[var(--ground)] hover:opacity-90 transition-opacity">Save list</button>
                   </div>
                 ) : null}
               </div>

@@ -7,11 +7,18 @@ import Link from "next/link";
 // own thesis (never show stale/fake data as real). Cut rather than faked.
 export function Header() {
   return (
-    <div className="bg-[var(--surface)] border-b border-[var(--line)]">
-      <div className="max-w-7xl mx-auto px-4 h-16 flex items-center gap-3">
+    <div className="sticky top-0 z-30 border-b border-[var(--line)] bg-[var(--ground)]/80 backdrop-blur-md">
+      <div className="max-w-7xl mx-auto px-4 h-12 flex items-center gap-2.5">
         <Link href="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[var(--accent)] to-blue-500" />
-          <span className="font-semibold text-lg tracking-tight text-[var(--ink-dark)]">Watchlist</span>
+          <span
+            className="flex items-center justify-center w-6 h-6 rounded-lg"
+            style={{ background: "linear-gradient(140deg, var(--amber-2), var(--amber) 45%, var(--amber-dim))", boxShadow: "0 3px 10px -3px rgba(240,180,41,.6), inset 0 1px 0 rgba(255,255,255,.35)" }}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M2 11.5 5.5 7l3 2.5L14 4" stroke="#1a1206" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+          <span className="font-semibold text-[13.5px] tracking-tight text-[var(--ink)]">Watchlist</span>
         </Link>
       </div>
     </div>
