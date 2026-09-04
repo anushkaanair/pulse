@@ -134,6 +134,31 @@ export function AttentionDeck({
     if (event.key === "Escape" && expanded) { event.preventDefault(); setExpanded(false); }
   };
 
+  const touchX = useRef<number | null>(null);
+  const touchTime = useRef<number>(0);
+  const onTouchStart = (event: React.TouchEvent) => {
+    if (event.touches.length !== 1) return;
+    touchX.current = event.touches[0].clientX;
+    touchTime.current = Date.now();
+  };
+  const onTouchEnd = (event: React.TouchEvent) => {
+    if (touchX.current === null) return;
+    const endX = event.changedTouches[0].clientX;
+    const diff = touchX.current - endX;
+    const duration = Date.now() - touchTime.current;
+    touchX.current = null;
+    
+    // Quick swipe of >40px
+    if (Math.abs(diff) > 40 && duration < 600) {
+      if (diff > 0) {
+        setActive((a) => Math.min(items.length - 1, a + 1));
+      } else {
+        setActive((a) => Math.max(0, a - 1));
+      }
+      setExpanded(true);
+    }
+  };
+
   return (
     <div
       ref={stage}
@@ -141,7 +166,9 @@ export function AttentionDeck({
       onMouseMove={onMove}
       onMouseLeave={() => setParallax({ x: 0, y: 0 })}
       onKeyDown={onKey}
-      className="relative select-none overflow-hidden rounded-2xl border border-[var(--line)] outline-none"
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+      className="relative select-none overflow-hidden rounded-2xl border border-[var(--line)] outline-none touch-pan-y"
       style={{
         height: expanded ? dims.stageH + 186 : dims.stageH, perspective: 1500, perspectiveOrigin: "50% 42%",
         background: "radial-gradient(120% 90% at 22% 0%, rgba(0,190,140,.04), transparent 58%), linear-gradient(175deg, var(--surface-2), var(--ground-2))",
@@ -306,20 +333,30 @@ export function AttentionDeck({
         })}
       </div>
 
-      {items.length > 1 && !expanded ? (
-        // The peeking edge of the next card is a subtle affordance on its
-        // own — an explicit arrow makes "there's more here" undeniable
-        // rather than something a user has to notice on their own.
-        <button
-          type="button"
-          onClick={() => { setActive((a) => Math.min(items.length - 1, a + 1)); setExpanded(true); }}
-          disabled={active >= items.length - 1}
-          aria-label="Next"
-          className="absolute right-3 top-1/2 z-20 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-[var(--muted)] transition-colors hover:text-[var(--ink)] disabled:opacity-0"
-          style={{ background: "var(--surface-3)", border: "1px solid var(--line-2)" }}
-        >
-          <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
-        </button>
+      {items.length > 1 ? (
+        <>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setActive((a) => Math.max(0, a - 1)); setExpanded(true); }}
+            disabled={active === 0}
+            aria-label="Previous"
+            className="absolute left-2 sm:left-4 top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-[var(--muted)] transition-opacity hover:text-[var(--ink)] disabled:opacity-0"
+            style={{ background: "var(--surface-3)", border: "1px solid var(--line-2)" }}
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M10 13L5 8l5-5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+          
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setActive((a) => Math.min(items.length - 1, a + 1)); setExpanded(true); }}
+            disabled={active >= items.length - 1}
+            aria-label="Next"
+            className="absolute right-2 sm:right-4 top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-[var(--muted)] transition-opacity hover:text-[var(--ink)] disabled:opacity-0"
+            style={{ background: "var(--surface-3)", border: "1px solid var(--line-2)" }}
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+        </>
       ) : null}
 
       {items.length > 1 ? (

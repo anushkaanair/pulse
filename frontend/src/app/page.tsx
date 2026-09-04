@@ -56,7 +56,7 @@ export default function LandingPage() {
   const up = pct !== null && pct >= 0;
 
   return (
-    <main style={{ background: "var(--ground)", minHeight: "100vh" }}>
+    <main style={{ background: "var(--ground)", minHeight: "100vh" }} className="overflow-x-hidden">
       {/* 1. Header Navigation */}
       <div className="bg-[var(--surface)] border-b border-[var(--line)] sticky top-0 z-40">
         <div className="max-w-[1200px] mx-auto px-4 h-[72px] flex items-center justify-between">
