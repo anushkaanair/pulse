@@ -30,21 +30,35 @@ function changesData(): ChangesResponse {
       digest: "First look — this is your baseline. Come back later and this line will tell you what changed.",
       summary: { meaningful: 0, total: current.items.length, stale: 0, newSinceLast: 0 },
       attentionBudget: 5,
+      topMover: null,
       items: current.items.map((entry) => ({
         ...entry, quote: entry.quote ?? quote(entry.symbol, "0"),
-        change: { kind: "none", pctSincePrev: null, zScore: null, events: [], confidence: "high", attention: 0, sensitivity: entry.sensitivity, why: "First look — this is your baseline." },
+        change: { kind: "none", pctSincePrev: null, zScore: null, zRaw: null, events: [], confidence: "high", attention: 0, sensitivity: entry.sensitivity, why: "First look — this is your baseline.", sectorAdjusted: false },
       })),
     };
   }
   const changes: ChangesResponse["items"] = current.items.map((entry, index) => ({
     ...entry, quote: entry.quote ?? quote(entry.symbol, "0"),
-    change: index === 0 ? { kind: "move", pctSincePrev: "-3.09", zScore: -2.8, events: ["DAY_LOW_BREACHED"], confidence: "high", attention: 3.8, sensitivity: entry.sensitivity, why: "Moved −3.09%, unusual for TCS (2.8σ). Broke below the day's low." }
-      : index === 1 ? { kind: "event", pctSincePrev: "+7.07", zScore: 1.6, events: ["VOLUME_SPIKE", "DAY_HIGH_BREACHED"], confidence: "high", attention: 3.4, sensitivity: entry.sensitivity, why: "Up 7.07% on heavy volume. The volume is the story." }
-      : index === 2 ? { kind: "event", pctSincePrev: "+0.08", zScore: 0.1, events: ["CORRECTED"], confidence: "high", attention: 0.6, sensitivity: entry.sensitivity, why: "The exchange revised a price you may have seen." }
-      : { kind: "none", pctSincePrev: "+0.13", zScore: 0.2, events: [], confidence: "high", attention: 0.2, sensitivity: entry.sensitivity, why: "No meaningful change." },
+    // TCS demonstrates sector-adjustment: the raw move (zRaw) looks bigger
+    // than what actually gets flagged (zScore) once the sector's own move
+    // is subtracted out — the beta-adjustment feature made visible in the
+    // mock, not just in real backend data.
+    change: index === 0 ? { kind: "move", pctSincePrev: "-3.09", zScore: -2.8, zRaw: -3.4, events: ["DAY_LOW_BREACHED"], confidence: "high", attention: 3.8, sensitivity: entry.sensitivity, why: "Down 3.09% — unusual for TCS even after accounting for the sector (2.8σ idiosyncratic, 3.4σ raw). Broke below the day's low.", sectorAdjusted: true }
+      : index === 1 ? { kind: "event", pctSincePrev: "+7.07", zScore: 1.6, zRaw: 1.6, events: ["VOLUME_SPIKE", "DAY_HIGH_BREACHED"], confidence: "high", attention: 3.4, sensitivity: entry.sensitivity, why: "Up 7.07% on heavy volume. The volume is the story.", sectorAdjusted: false }
+      : index === 2 ? { kind: "event", pctSincePrev: "+0.08", zScore: 0.1, zRaw: 0.1, events: ["CORRECTED"], confidence: "high", attention: 0.6, sensitivity: entry.sensitivity, why: "The exchange revised a price you may have seen.", sectorAdjusted: false }
+      : { kind: "none", pctSincePrev: "+0.13", zScore: 0.2, zRaw: 0.2, events: [], confidence: "high", attention: 0.2, sensitivity: entry.sensitivity, why: "No meaningful change.", sectorAdjusted: false },
   }));
   const meaningful = acknowledged ? 0 : 3;
-  return { snapshotId: "mock-snapshot-1", baseline: { takenAt: acknowledged ? now : null, kind: acknowledged ? "checkpoint" : "first-visit", awaySeconds: acknowledged ? 9000 : null }, asOf: now, feed: { status: faults.outage ? "stale" : "live", lagSeconds: faults.outage ? 212 : 1 }, digest: acknowledged ? "Nothing meaningful changed since you last looked." : "Since 2 hours ago: 3 things worth a look — TCS −3.09%, SUZLON on heavy volume, RELIANCE price corrected.", summary: { meaningful, total: current.items.length, stale: current.items.filter((entry) => entry.stale).length, newSinceLast: 0 }, attentionBudget: 5, items: changes };
+  return {
+    snapshotId: "mock-snapshot-1",
+    baseline: { takenAt: acknowledged ? now : null, kind: acknowledged ? "checkpoint" : "first-visit", awaySeconds: acknowledged ? 9000 : null },
+    asOf: now, feed: { status: faults.outage ? "stale" : "live", lagSeconds: faults.outage ? 212 : 1 },
+    digest: acknowledged ? "Nothing meaningful changed since you last looked." : "Since 2 hours ago: 3 things worth a look — TCS −3.09%, SUZLON on heavy volume, RELIANCE price corrected.",
+    summary: { meaningful, total: current.items.length, stale: current.items.filter((entry) => entry.stale).length, newSinceLast: 0 },
+    attentionBudget: 5,
+    topMover: acknowledged ? null : { symbol: "TCS", displaced: "RELIANCE" },
+    items: changes,
+  };
 }
 
 export const mock = {

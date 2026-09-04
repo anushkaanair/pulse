@@ -22,8 +22,11 @@ function item(symbol: string, price: number, extra: Partial<EngineItem["quote"] 
 function seen(price: number, extra: Partial<SnapshotPayload[string]> = {}): SnapshotPayload[string] {
   return { price: price.toFixed(4), asOf: "2026-09-04T09:00:00.000Z", volume: 1000, dayHigh: "200.0000", dayLow: "50.0000", ...extra };
 }
-function stats(symbol: string, sigma: number | null, meanVolumePerTick = 10): Map<string, SymbolStats> {
-  return new Map([[symbol, { symbol, sigma, sampleSize: 50, meanVolumePerTick }]]);
+function stats(
+  symbol: string, sigma: number | null, meanVolumePerTick = 10,
+  beta: number | null = null, idioSigma: number | null = null,
+): Map<string, SymbolStats> {
+  return new Map([[symbol, { symbol, sigma, sampleSize: 50, meanVolumePerTick, beta, idioSigma }]]);
 }
 
 describe("computeChanges", () => {
@@ -113,6 +116,59 @@ describe("computeChanges", () => {
   it("no quote yet → none, low confidence, no crash", () => {
     const [r] = computeChanges({ Z: seen(100) }, 1_000, [{ symbol: "Z", name: "Z", sensitivity: "normal", quote: null }], new Map(), cfg);
     expect(r.change.kind).toBe("none");
+  });
+});
+
+describe("beta-adjusted / residual significance", () => {
+  it("a move fully explained by the sector (beta≈1) is NOT meaningful, even though the raw move is large", () => {
+    // Stock down 3%, beta=1, index also down 3% over the same window →
+    // idiosyncratic residual ≈ 0. Raw sigma would flag this as a huge move;
+    // the sector-adjusted path correctly shouldn't.
+    const st = stats("S", 0.001, 10, 1.0, 0.0005); // idioSigma tiny — even a small residual would show up
+    const [r] = computeChanges({ S: seen(100) }, 1_000, [item("S", 97)], st, cfg, -0.03);
+    expect(r.change.sectorAdjusted).toBe(true);
+    expect(r.change.kind).toBe("none");
+    expect(Math.abs(r.change.zScore!)).toBeLessThan(1);
+  });
+
+  it("the SAME raw move is meaningful when the sector didn't move — idiosyncratic, not beta", () => {
+    const st = stats("S", 0.001, 10, 1.0, 0.0005);
+    const [r] = computeChanges({ S: seen(100) }, 1_000, [item("S", 97)], st, cfg, 0); // index flat
+    expect(r.change.sectorAdjusted).toBe(true);
+    expect(r.change.kind).toBe("move");
+  });
+
+  it("a move partly explained by a lower-beta stock still flags the idiosyncratic remainder", () => {
+    // beta=0.5: half the market's -3% (i.e. -1.5%) is "expected"; this
+    // stock is down 4%, so ~2.5% is genuinely its own move.
+    const st = stats("S", 0.001, 10, 0.5, 0.0005);
+    const [r] = computeChanges({ S: seen(100) }, 1_000, [item("S", 96)], st, cfg, -0.03);
+    expect(r.change.sectorAdjusted).toBe(true);
+    expect(r.change.kind).toBe("move");
+    expect(r.change.zScore!).toBeLessThan(0); // still down, just less dramatically than raw −4%
+  });
+
+  it("no beta estimate yet (thin history) falls back to plain per-stock z, unadjusted", () => {
+    const st = stats("S", 0.001); // beta/idioSigma default null
+    const [r] = computeChanges({ S: seen(100) }, 1_000, [item("S", 97)], st, cfg, -0.03);
+    expect(r.change.sectorAdjusted).toBe(false);
+    // Raw z from st.sigma=0.001 on a 3% move is enormous — this IS meaningful
+    // by the fallback path, which is the whole point: no beta yet ≠ no signal.
+    expect(r.change.kind).toBe("move");
+  });
+
+  it("beta known but the index itself has no return right now → falls back honestly, says so", () => {
+    const st = stats("S", 0.001, 10, 1.0, 0.0005);
+    const [r] = computeChanges({ S: seen(100) }, 1_000, [item("S", 97)], st, cfg, null); // index unavailable
+    expect(r.change.sectorAdjusted).toBe(false);
+    expect(r.change.why).toMatch(/sector data delayed/i);
+  });
+
+  it("a big raw move that's mostly sector still gets a plain-language explanation, not silence", () => {
+    const st = stats("S", 0.001, 10, 1.0, 0.02); // idioSigma large enough that the residual doesn't clear the bar
+    const [r] = computeChanges({ S: seen(100) }, 1_000, [item("S", 97)], st, cfg, -0.03);
+    expect(r.change.kind).toBe("none");
+    expect(r.change.why).toMatch(/tracks the sector/i);
   });
 });
 

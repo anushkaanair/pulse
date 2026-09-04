@@ -106,7 +106,11 @@ async function main() {
   console.log("server up\n");
 
   const pool = new Pool({ connectionString: DATABASE_URL });
-  const allSymbols = (await pool.query<{ symbol: string }>("SELECT symbol FROM symbols ORDER BY symbol")).rows.map((r) => r.symbol);
+  // Exclude is_index rows (the market proxy, e.g. NIFTY) — a real client
+  // never sees them via /api/symbols and can't add one to a watchlist
+  // (see routes/symbols.ts, routes/watchlists.ts), so this torture-driven
+  // user population shouldn't try to either.
+  const allSymbols = (await pool.query<{ symbol: string }>("SELECT symbol FROM symbols WHERE NOT is_index ORDER BY symbol")).rows.map((r) => r.symbol);
   if (allSymbols.length < 10) throw new Error("run migrations first: not enough seeded symbols");
 
   // 3 users x 3 watchlists, overlapping symbol slices so the union covers

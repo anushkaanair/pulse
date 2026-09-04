@@ -1,10 +1,20 @@
 import { FaultConfig, MarketDataProvider, NO_FAULTS, Tick } from "./provider.js";
+import { MARKET_INDEX_SYMBOL } from "./indexSymbol.js";
 
 // Deterministic market simulator. Same seed → same ticks, so the torture
 // test is reproducible and a demo can be replayed. Each symbol gets its own
 // base price and daily volatility, so "meaningful" has something real to be
 // relative to: a 2% move in a σ=0.4% name should score very differently
 // from a 2% move in a σ=4% name.
+//
+// Every symbol's return is also built from a shared market factor (the
+// simulated index) plus its own idiosyncratic noise: r = beta·indexReturn +
+// idio. This isn't decorative — it's what makes beta-adjustment in
+// changes/stats.ts and engine.ts a real, checkable thing rather than a
+// feature with nothing underneath it: a stock down 3% on a day the index
+// is down 3% (beta≈1) should score close to zero idiosyncratically, and
+// this simulator is the only source of "the index was down 3%" truth to
+// check that against.
 
 // mulberry32: tiny seeded PRNG, good enough for this purpose.
 function mulberry32(seed: number) {
@@ -24,6 +34,13 @@ function hashString(s: string) {
   return h >>> 0;
 }
 
+/** Standard-normal draw via Box–Muller, given a [0,1) uniform source. */
+function gaussian(rand: () => number): number {
+  const u1 = Math.max(rand(), 1e-12);
+  const u2 = rand();
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+
 interface SymbolState {
   price: number;
   prevClose: number;
@@ -32,10 +49,26 @@ interface SymbolState {
   weekHigh: number;
   weekLow: number;
   volume: number;
-  sigmaPerTick: number;   // return stdev per tick
+  sigmaPerTick: number;      // TOTAL return stdev per tick (beta + idio combined)
+  idioSigmaPerTick: number;  // the idiosyncratic slice of sigmaPerTick, after removing beta's share
+  beta: number;              // sensitivity to the shared index factor
   meanVolumePerTick: number;
   rand: () => number;
   lastAsOf: number;       // ms; strictly increasing per symbol
+}
+
+interface IndexState {
+  price: number;
+  prevClose: number;
+  dayHigh: number;
+  dayLow: number;
+  weekHigh: number;
+  weekLow: number;
+  volume: number;
+  sigmaPerTick: number;
+  meanVolumePerTick: number;
+  rand: () => number;
+  lastAsOf: number;
 }
 
 export interface SimulatedProviderOptions {
@@ -59,17 +92,19 @@ export class SimulatedProvider implements MarketDataProvider {
   private readonly tickMs: number;
   private readonly sigmaOverride: Record<string, number>;
   private readonly faultRand: () => number;
+  private readonly indexState: IndexState;
 
   constructor(opts: SimulatedProviderOptions = {}) {
     this.seed = opts.seed ?? 42;
     this.tickMs = opts.tickMs ?? 1000;
     this.sigmaOverride = opts.sigmaDaily ?? {};
     this.faultRand = mulberry32(this.seed ^ 0x9e3779b9);
+    this.indexState = this.initIndex();
   }
 
   setSymbols(symbols: string[]) {
-    this.symbols = new Set(symbols);
-    for (const s of symbols) if (!this.state.has(s)) this.state.set(s, this.initSymbol(s));
+    this.symbols = new Set(symbols.filter((s) => s !== MARKET_INDEX_SYMBOL));
+    for (const s of this.symbols) if (!this.state.has(s)) this.state.set(s, this.initSymbol(s));
   }
 
   onTick(handler: (t: Tick) => void) {
@@ -102,10 +137,54 @@ export class SimulatedProvider implements MarketDataProvider {
   /** Advance one interval synchronously. Exposed so tests don't need timers. */
   step(now = Date.now()) {
     if (this.faults.outage) return;
+    // The index always ticks, regardless of what any watchlist tracks —
+    // it's the shared factor every symbol's beta is measured against, not
+    // something demand-driven. Computed once per step and reused by every
+    // symbol below, so a symbol's move and "what the market did at the
+    // same moment" are always in lockstep, not fuzzily time-joined later.
+    const indexReturn = this.nextIndexReturn();
+    this.deliverWithFaults(this.buildIndexTick(now));
     for (const symbol of this.symbols) {
-      const tick = this.nextTick(symbol, now);
+      const tick = this.nextTick(symbol, now, indexReturn);
       this.deliverWithFaults(tick);
     }
+  }
+
+  private initIndex(): IndexState {
+    const rand = mulberry32(this.seed ^ hashString(MARKET_INDEX_SYMBOL));
+    const basePrice = 22000 + Math.floor(rand() * 3000); // NIFTY-scale base
+    const sigmaDaily = 0.009; // an index is calmer than any single stock in it
+    const ticksPerDay = (6.25 * 3600 * 1000) / this.tickMs;
+    return {
+      price: basePrice, prevClose: basePrice, dayHigh: basePrice, dayLow: basePrice,
+      weekHigh: round4(basePrice * 1.15), weekLow: round4(basePrice * 0.85),
+      volume: 0, sigmaPerTick: sigmaDaily / Math.sqrt(ticksPerDay),
+      meanVolumePerTick: 50_000, rand, lastAsOf: 0,
+    };
+  }
+
+  /** Advances the index one tick and returns its fractional return for this step. */
+  private nextIndexReturn(): number {
+    const s = this.indexState;
+    const r = gaussian(s.rand) * s.sigmaPerTick;
+    s.price = Math.max(1, s.price * (1 + r));
+    s.dayHigh = Math.max(s.dayHigh, s.price);
+    s.dayLow = Math.min(s.dayLow, s.price);
+    s.weekHigh = Math.max(s.weekHigh, s.price);
+    s.weekLow = Math.min(s.weekLow, s.price);
+    s.volume += Math.floor(s.meanVolumePerTick * (0.5 + s.rand()));
+    return r;
+  }
+
+  private buildIndexTick(now: number): Tick {
+    const s = this.indexState;
+    s.lastAsOf = Math.max(now, s.lastAsOf + 1);
+    return {
+      symbol: MARKET_INDEX_SYMBOL,
+      price: round4(s.price), prevClose: round4(s.prevClose), dayHigh: round4(s.dayHigh), dayLow: round4(s.dayLow),
+      weekHigh: round4(s.weekHigh), weekLow: round4(s.weekLow), volume: s.volume,
+      asOf: new Date(s.lastAsOf), seq: ++this.seq, corrected: false, source: this.name,
+    };
   }
 
   private initSymbol(symbol: string): SymbolState {
@@ -115,6 +194,14 @@ export class SimulatedProvider implements MarketDataProvider {
     const basePrice = 50 + Math.floor(rand() * 4000);
     const sigmaDaily = this.sigmaOverride[symbol] ?? 0.004 + rand() * 0.036; // 0.4%–4%/day
     const ticksPerDay = (6.25 * 3600 * 1000) / this.tickMs;
+    const sigmaPerTick = sigmaDaily / Math.sqrt(ticksPerDay);
+    // Beta: how much of this symbol's move is "the market", 0.4–1.8, spread
+    // around 1.0. The idiosyncratic slice is whatever variance beta doesn't
+    // already explain — floored so a very high-beta, low-vol name (nearly
+    // pure market exposure) never goes imaginary under the sqrt.
+    const beta = 0.4 + rand() * 1.4;
+    const indexSigmaPerTick = this.indexState.sigmaPerTick;
+    const idioSigmaPerTick = Math.sqrt(Math.max(1e-8, sigmaPerTick ** 2 - (beta * indexSigmaPerTick) ** 2));
     return {
       price: basePrice,
       prevClose: basePrice,
@@ -124,19 +211,25 @@ export class SimulatedProvider implements MarketDataProvider {
       weekHigh: round4(basePrice * (1.05 + rand() * 0.35)),
       weekLow: round4(basePrice * (0.6 + rand() * 0.3)),
       volume: 0,
-      sigmaPerTick: sigmaDaily / Math.sqrt(ticksPerDay),
+      sigmaPerTick,
+      idioSigmaPerTick,
+      beta,
       meanVolumePerTick: 500 + Math.floor(rand() * 5000),
       rand,
       lastAsOf: 0,
     };
   }
 
-  private nextTick(symbol: string, now: number): Tick {
+  private nextTick(symbol: string, now: number, indexReturn: number): Tick {
     const s = this.state.get(symbol)!;
-    // Box–Muller for a normal return; occasional fat-tail jump so events fire.
-    const u1 = Math.max(s.rand(), 1e-12);
-    const u2 = s.rand();
-    let r = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2) * s.sigmaPerTick;
+    // Combined return: the market's share (beta·indexReturn) plus this
+    // stock's own idiosyncratic noise — this is the actual source of truth
+    // that changes/stats.ts's beta/residual estimate is trying to recover
+    // from tick history, and what makes "subtract what the sector did"
+    // in engine.ts a real, checkable adjustment rather than cosmetic.
+    let r = s.beta * indexReturn + gaussian(s.rand) * s.idioSigmaPerTick;
+    // Occasional fat-tail jump — a stock-specific event, not a market one,
+    // so it's idiosyncratic: added after the beta split, not before it.
     if (s.rand() < 0.002) r += (s.rand() < 0.5 ? -1 : 1) * s.sigmaPerTick * 25;
     s.price = Math.max(1, s.price * (1 + r));
     s.dayHigh = Math.max(s.dayHigh, s.price);

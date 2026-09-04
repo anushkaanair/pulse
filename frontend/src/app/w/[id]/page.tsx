@@ -113,7 +113,14 @@ export default function WatchlistPage() {
                <p className="text-sm text-[var(--muted)] bg-[var(--surface)] p-6 rounded-xl border border-[var(--line)]">Nothing meaningful changed since {changes.baseline.takenAt ? new Date(changes.baseline.takenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "your last visit"}.</p>
             ) : (
                <div className="flex gap-4 overflow-x-auto pb-4 hide-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
-                 {rankedForAttention.map((item) => <ChangeCard key={item.symbol} item={item} />)}
+                 {rankedForAttention.map((item) => (
+                   <ChangeCard
+                     key={item.symbol}
+                     item={item}
+                     isTopMover={changes.topMover?.symbol === item.symbol}
+                     displaced={changes.topMover?.displaced}
+                   />
+                 ))}
                </div>
             )}
             {overflow > 0 ? (

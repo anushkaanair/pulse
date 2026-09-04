@@ -9,6 +9,7 @@ import { AppError } from "../middleware/errorHandler.js";
 import { feedStatus } from "./health.js";
 import { formatQuote, type QuoteRow } from "./quotes.js";
 import type { Ingestor } from "../market/ingestor.js";
+import { MARKET_INDEX_SYMBOL } from "../market/indexSymbol.js";
 
 const Query = z.object({ limit: z.coerce.number().int().min(1).max(500).default(20) });
 
@@ -26,28 +27,46 @@ export function changesRouter(pool: Pool, ingestor: Ingestor) {
       const wl = await pool.query("SELECT id FROM watchlists WHERE id = $1 AND user_id = $2", [req.params.id, req.userId]);
       if (wl.rowCount === 0) throw new AppError(404, "NOT_FOUND", "Watchlist not found");
 
-      const items = await pool.query<ItemRow>(
-        `SELECT wi.symbol, wi.sensitivity, s.name,
-                q.price, q.prev_close, q.day_high, q.day_low, q.week_high, q.week_low, q.volume,
-                q.as_of, q.received_at, q.corrected, q.source
-           FROM watchlist_items wi
-           JOIN symbols s ON s.symbol = wi.symbol
-      LEFT JOIN quotes q ON q.symbol = wi.symbol
-          WHERE wi.watchlist_id = $1`,
-        [req.params.id],
-      );
+      const [items, indexQuote, cp] = await Promise.all([
+        pool.query<ItemRow>(
+          `SELECT wi.symbol, wi.sensitivity, s.name,
+                  q.price, q.prev_close, q.day_high, q.day_low, q.week_high, q.week_low, q.volume,
+                  q.as_of, q.received_at, q.corrected, q.source
+             FROM watchlist_items wi
+             JOIN symbols s ON s.symbol = wi.symbol
+        LEFT JOIN quotes q ON q.symbol = wi.symbol
+            WHERE wi.watchlist_id = $1`,
+          [req.params.id],
+        ),
+        // The index's current price — one point lookup by primary key, not
+        // a scan, so it doesn't change the scale story in RESILIENCE.md.
+        pool.query<{ price: string }>("SELECT price FROM quotes WHERE symbol = $1", [MARKET_INDEX_SYMBOL]),
+        pool.query<{ taken_at: Date; payload: SnapshotPayload; top_symbol: string | null; index_price: string | null }>(
+          `SELECT c.taken_at, s.payload, s.top_symbol, s.index_price
+             FROM checkpoints c JOIN snapshots s ON s.id = c.snapshot_id
+            WHERE c.user_id = $1 AND c.watchlist_id = $2`,
+          [req.userId, req.params.id],
+        ),
+      ]);
 
-      const cp = await pool.query<{ taken_at: Date; payload: SnapshotPayload }>(
-        `SELECT c.taken_at, s.payload FROM checkpoints c JOIN snapshots s ON s.id = c.snapshot_id
-          WHERE c.user_id = $1 AND c.watchlist_id = $2`,
-        [req.userId, req.params.id],
-      );
       const baseline = cp.rows[0] ?? null;
       const now = new Date();
       const elapsedMs = baseline ? now.getTime() - new Date(baseline.taken_at).getTime() : null;
 
       const symbols = items.rows.map((i) => i.symbol);
       const stats = await loadStats(pool, symbols);
+
+      // What the market itself did since the checkpoint, computed exactly
+      // the same way any stock's move is: (now − seen) / seen. null when
+      // there's nothing to compare from yet, or the index has no current
+      // quote right now (e.g. mid-outage) — engine.ts degrades honestly in
+      // either case rather than pretending an adjustment happened.
+      const currentIndexPrice = indexQuote.rows[0] ? Number(indexQuote.rows[0].price) : null;
+      const seenIndexPrice = baseline?.index_price != null ? Number(baseline.index_price) : null;
+      const indexReturn =
+        currentIndexPrice !== null && seenIndexPrice !== null && seenIndexPrice > 0
+          ? (currentIndexPrice - seenIndexPrice) / seenIndexPrice
+          : null;
 
       const engineItems: EngineItem[] = items.rows.map((row) => ({
         symbol: row.symbol,
@@ -69,7 +88,19 @@ export function changesRouter(pool: Pool, ingestor: Ingestor) {
         volumeSpikeMultiple: config.volumeSpikeMultiple,
         gapPct: config.gapPct,
         sensitivityMultiplier: DEFAULT_MULTIPLIER,
-      });
+      }, indexReturn);
+
+      // Watchlist-relative ranking, not just magnitude: `results` is already
+      // sorted by the engine's own attention score, so results[0] (if it's
+      // actually meaningful) IS the current #1 mover. Compared against who
+      // held that spot as of the last checkpoint, this is "you have a new
+      // top mover" rather than just "here's a z-score" — a different and
+      // more useful claim about attention, not magnitude.
+      const currentTop = results[0] && results[0].change.kind !== "none" ? results[0].symbol : null;
+      const topMover =
+        currentTop && currentTop !== baseline?.top_symbol
+          ? { symbol: currentTop, displaced: baseline?.top_symbol ?? null }
+          : null;
 
       // The snapshot is exactly what this response shows. Re-use the latest
       // unpromoted snapshot if nothing changed, so idle polling doesn't write.
@@ -81,7 +112,7 @@ export function changesRouter(pool: Pool, ingestor: Ingestor) {
           volume: Number(row.volume), dayHigh: row.day_high, dayLow: row.day_low,
         };
       }
-      const snapshotId = await mintSnapshot(pool, req.userId, req.params.id, payload);
+      const snapshotId = await mintSnapshot(pool, req.userId, req.params.id, payload, currentTop, currentIndexPrice);
 
       const quoteBySymbol = new Map(items.rows.filter((i) => i.as_of).map((i) => [i.symbol, formatQuote(i, now)]));
       const asOfMax = items.rows.reduce<Date | null>((m, i) => (i.as_of && (!m || i.as_of > m) ? new Date(i.as_of) : m), null);
@@ -110,6 +141,7 @@ export function changesRouter(pool: Pool, ingestor: Ingestor) {
         // list instead. `items` is already sorted by the engine's own
         // attention ranking, so the client just takes the top N of it.
         attentionBudget: config.attentionBudget,
+        topMover,
         items: results.slice(0, limit).map((x) => {
           const quote = quoteBySymbol.get(x.symbol) ?? null;
           return { symbol: x.symbol, name: x.name, quote, stale: quote ? quote.stale : true, change: x.change };
@@ -123,7 +155,10 @@ export function changesRouter(pool: Pool, ingestor: Ingestor) {
   return r;
 }
 
-async function mintSnapshot(pool: Pool, userId: string, watchlistId: string, payload: SnapshotPayload): Promise<string> {
+async function mintSnapshot(
+  pool: Pool, userId: string, watchlistId: string, payload: SnapshotPayload,
+  topSymbol: string | null, indexPrice: number | null,
+): Promise<string> {
   const json = JSON.stringify(payload);
   const hash = createHash("sha1").update(json).digest("hex");
   // Scaling fix: dedupe on a 40-byte hash, not a full 18KB jsonb equality
@@ -138,8 +173,8 @@ async function mintSnapshot(pool: Pool, userId: string, watchlistId: string, pay
   );
   if (latest.rows[0]?.payload_hash === hash) return latest.rows[0].id;
   const ins = await pool.query<{ id: string }>(
-    "INSERT INTO snapshots (user_id, watchlist_id, payload, payload_hash) VALUES ($1, $2, $3::jsonb, $4) RETURNING id",
-    [userId, watchlistId, json, hash],
+    "INSERT INTO snapshots (user_id, watchlist_id, payload, payload_hash, top_symbol, index_price) VALUES ($1, $2, $3::jsonb, $4, $5, $6) RETURNING id",
+    [userId, watchlistId, json, hash, topSymbol, indexPrice],
   );
   // Bounded retention (#2 gap): keep the newest 50 unpromoted snapshots per
   // list; anything older and not referenced by a checkpoint is disposable.

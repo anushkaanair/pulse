@@ -19,14 +19,27 @@ export interface Watchlist { id: string; name: string; version: number; items: W
 export interface Health { status: "ok" | "degraded"; db: "connected" | "unreachable"; feed: { status: FeedStatus; lastTickAt: string | null; lagSeconds: number | null } }
 export interface ChangeItem {
   symbol: string; name: string; quote: Quote; stale: boolean;
-  change: { kind: ChangeKind; pctSincePrev: string | null; zScore: number | null; events: ChangeEvent[]; confidence: "high" | "low"; attention: number; sensitivity: Sensitivity; why: string };
+  change: {
+    kind: ChangeKind; pctSincePrev: string | null;
+    // zScore: the number actually used to decide `kind` — residual
+    // (sector-adjusted) when available, plain per-stock z otherwise.
+    // zRaw: the plain per-stock z, always, regardless of which was used —
+    // the gap between the two IS the beta-adjustment made visible.
+    zScore: number | null; zRaw: number | null;
+    events: ChangeEvent[]; confidence: "high" | "low"; attention: number; sensitivity: Sensitivity; why: string;
+    sectorAdjusted: boolean;
+  };
 }
 export interface ChangesResponse {
   snapshotId: string;
   baseline: { takenAt: string | null; kind: "checkpoint" | "first-visit"; awaySeconds: number | null };
   asOf: string; feed: { status: FeedStatus; lagSeconds: number | null }; digest: string;
   summary: { meaningful: number; total: number; stale: number; newSinceLast: number };
-  attentionBudget: number; items: ChangeItem[];
+  attentionBudget: number;
+  // The current #1 ranked mover, when it's different from who held that
+  // spot as of the last checkpoint — rank-of-attention, not just magnitude.
+  topMover: { symbol: string; displaced: string | null } | null;
+  items: ChangeItem[];
 }
 export interface ConflictResponse { error: string; code: "VERSION_CONFLICT"; current: { version: number; items: WatchlistItem[] } }
 export interface FaultConfig { outage?: boolean; delayMs?: number; outOfOrderPct?: number; duplicatePct?: number; correctionPct?: number }

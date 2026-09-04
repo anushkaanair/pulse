@@ -14,6 +14,14 @@ import { Pool } from "pg";
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   max: Number(process.env.POOL_MAX ?? 20),
+  // Without this, a single stalled physical connection attempt (a real
+  // failure mode, not hypothetical — reproduced live: "localhost" resolving
+  // IPv6-first against a Docker-mapped port can hang indefinitely with no
+  // error) blocks every request that needs a fresh client, forever, with no
+  // visible error — silently worse than the honest "stale/down" states this
+  // system is supposed to degrade into. Bounded so a bad connection fails
+  // fast and loud instead.
+  connectionTimeoutMillis: Number(process.env.POOL_CONNECT_TIMEOUT_MS ?? 5000),
 });
 
 pool.on("error", (err) => {

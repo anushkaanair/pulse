@@ -47,12 +47,28 @@ export interface EngineConfig {
 export interface Change {
   kind: ChangeKind;
   pctSincePrev: string | null;
+  // The z-score actually used to decide `kind`/`isMove` — residual
+  // (sector-adjusted) when available, plain per-stock z otherwise. This is
+  // the number the ranking and the primary "why" line are built from.
   zScore: number | null;
+  // The plain per-stock z-score, computed whenever sigma is available,
+  // REGARDLESS of which one (this or zScore) was actually used to decide
+  // significance. Exists so the UI/why-text can say "moved 3.1σ raw, but
+  // only 0.4σ once the sector's own move is subtracted out" — the
+  // difference between the two numbers IS the beta-adjustment feature made
+  // visible, not just asserted. Equal to zScore when sectorAdjusted=false.
+  zRaw: number | null;
   events: ChangeEvent[];
   confidence: "high" | "low";
   attention: number;
   sensitivity: Sensitivity;
   why: string;
+  // True when zScore/kind reflect this stock's move with what the market
+  // (the index proxy) did over the same window subtracted out — i.e. a
+  // z-score of "how unusual is this for THIS stock, beyond beta," not raw
+  // volatility. False means it fell back to the plain per-stock z (thin
+  // beta history, or the index feed itself was unavailable — see `why`).
+  sectorAdjusted: boolean;
 }
 
 export interface EngineResult {
@@ -77,11 +93,17 @@ export function computeChanges(
   items: EngineItem[],
   stats: Map<string, SymbolStats>,
   cfg: EngineConfig,
+  // The index's own fractional return since the checkpoint, computed the
+  // same way as any stock's (see routes/changes.ts). null when there's no
+  // checkpoint to compare from yet, or the index has no fresh quote right
+  // now — either way, changeFor() below degrades to a plain per-stock z
+  // rather than silently pretending an adjustment happened.
+  indexReturn: number | null = null,
 ): EngineResult[] {
   const results = items.map((item) => ({
     symbol: item.symbol,
     name: item.name,
-    change: changeFor(item, snapshot?.[item.symbol] ?? null, snapshot !== null, elapsedMs, stats.get(item.symbol), cfg),
+    change: changeFor(item, snapshot?.[item.symbol] ?? null, snapshot !== null, elapsedMs, stats.get(item.symbol), cfg, indexReturn),
   }));
   // Rank: what deserves attention first; "none" always last, ties by symbol
   // so the order is stable between polls (no UI jitter).
@@ -101,19 +123,20 @@ function changeFor(
   elapsedMs: number | null,
   st: SymbolStats | undefined,
   cfg: EngineConfig,
+  indexReturn: number | null,
 ): Change {
   const sensitivity = item.sensitivity;
   const mult = cfg.sensitivityMultiplier[sensitivity] ?? 1;
   const q = item.quote;
 
   if (!q) {
-    return { kind: "none", pctSincePrev: null, zScore: null, events: [], confidence: "low", attention: 0, sensitivity, why: "No market data yet." };
+    return { kind: "none", pctSincePrev: null, zScore: null, zRaw: null, events: [], confidence: "low", attention: 0, sensitivity, why: "No market data yet.", sectorAdjusted: false };
   }
   if (!hasBaseline) {
-    return { kind: "none", pctSincePrev: null, zScore: null, events: [], confidence: "high", attention: 0, sensitivity, why: "First look — this is your baseline." };
+    return { kind: "none", pctSincePrev: null, zScore: null, zRaw: null, events: [], confidence: "high", attention: 0, sensitivity, why: "First look — this is your baseline.", sectorAdjusted: false };
   }
   if (!seen) {
-    return { kind: "new", pctSincePrev: null, zScore: null, events: [], confidence: "high", attention: 0.5, sensitivity, why: "Added since you last looked. No baseline yet." };
+    return { kind: "new", pctSincePrev: null, zScore: null, zRaw: null, events: [], confidence: "high", attention: 0.5, sensitivity, why: "Added since you last looked. No baseline yet.", sectorAdjusted: false };
   }
 
   const prev = Number(seen.price);
@@ -136,13 +159,32 @@ function changeFor(
   let z: number | null = null;
   let confidence: "high" | "low" = "high";
   let isMove = false;
-  if (st?.sigma && st.sigma > 0) {
+  let sectorAdjusted = false;
+  let indexUnavailableDespiteBeta = false;
+  // Beta-adjusted first: "meaningful" should mean unusual for THIS stock
+  // beyond what the market did, not just a big raw number — a stock down
+  // 3% on a day its beta says it should be down ~3% anyway isn't news; the
+  // same 3% while the market was flat is. Falls back to plain per-stock z
+  // (below) when there isn't yet a reliable beta/idio-σ estimate, or when
+  // the index itself has no return to compare against right now (e.g. its
+  // feed is delayed) — never silently pretends an adjustment happened.
+  if (st?.beta != null && st.idioSigma && st.idioSigma > 0 && indexReturn !== null) {
+    const residual = r - st.beta * indexReturn;
+    z = residual / (st.idioSigma * Math.sqrt(n));
+    isMove = Math.abs(z) >= cfg.zThreshold * mult;
+    sectorAdjusted = true;
+  } else if (st?.sigma && st.sigma > 0) {
     z = r / (st.sigma * Math.sqrt(n));
     isMove = Math.abs(z) >= cfg.zThreshold * mult;
+    indexUnavailableDespiteBeta = st.beta != null && indexReturn === null;
   } else {
     confidence = "low";
     isMove = Math.abs(pct) >= cfg.absThresholdPct * mult;
   }
+  // Plain per-stock z, independent of which path was used above — the
+  // beta-adjustment made visible as a number, not just asserted: the gap
+  // between zRaw and zScore IS the sector's share of the move.
+  const zRaw = st?.sigma && st.sigma > 0 ? r / (st.sigma * Math.sqrt(n)) : null;
 
   // A breach only counts if it's significant by the SAME bar as a price
   // move — not merely non-zero. Without this, a stock drifting upward sets
@@ -183,30 +225,45 @@ function changeFor(
     kind,
     pctSincePrev: signed(pct),
     zScore: z === null ? null : round2(z),
+    zRaw: zRaw === null ? null : round2(zRaw),
     events,
     confidence,
     attention,
     sensitivity,
-    why: why(item, kind, pct, z, events, confidence, sensitivity, isMove),
+    sectorAdjusted,
+    why: why(item, kind, pct, z, zRaw, events, confidence, sensitivity, isMove, sectorAdjusted, indexUnavailableDespiteBeta),
   };
 }
 
 function why(
-  item: EngineItem, kind: ChangeKind, pct: number, z: number | null,
+  item: EngineItem, kind: ChangeKind, pct: number, z: number | null, zRaw: number | null,
   events: ChangeEvent[], confidence: "high" | "low", sensitivity: Sensitivity, isMove: boolean,
+  sectorAdjusted: boolean, indexUnavailableDespiteBeta: boolean,
 ): string {
   const parts: string[] = [];
   const dir = pct >= 0 ? "Up" : "Down";
   const mag = `${Math.abs(pct).toFixed(2)}%`;
+  // When sector-adjusted, prefer stating both numbers when they actually
+  // differ — "3.1σ raw, 0.4σ vs its sector" makes the adjustment visible
+  // instead of just asserted. When they're close, one number reads cleaner.
+  const rawNote = sectorAdjusted && zRaw !== null && z !== null && Math.abs(Math.abs(zRaw) - Math.abs(z)) >= 0.3
+    ? ` (${Math.abs(zRaw).toFixed(1)}σ raw)` : "";
   if (isMove) {
     parts.push(
       z !== null
-        ? `${dir} ${mag} — unusual for ${item.symbol} (${Math.abs(z).toFixed(1)}σ).`
+        ? `${dir} ${mag} — unusual for ${item.symbol}${sectorAdjusted ? " even after accounting for the sector" : ""} (${Math.abs(z).toFixed(1)}σ${sectorAdjusted ? " idiosyncratic" : ""}${rawNote}).`
         : `${dir} ${mag} — flagged on size alone; not enough history for a baseline yet.`,
     );
+  } else if (z !== null && sectorAdjusted && Math.abs(pct) >= 0.5) {
+    // The raw move looks big, but it's explained by the sector, not this
+    // stock — this is the beta-adjustment feature actually doing its job,
+    // so it's worth saying explicitly rather than looking like nothing
+    // happened.
+    parts.push(`${dir} ${mag} — largely tracks the sector; not unusual for ${item.symbol} once that's accounted for (${Math.abs(z).toFixed(1)}σ idiosyncratic${rawNote}).`);
   } else if (events.length && Math.abs(pct) >= 0.01) {
     parts.push(`${dir} ${mag}${z !== null ? ` (${Math.abs(z).toFixed(1)}σ — ordinary for this stock)` : ""}.`);
   }
+  if (indexUnavailableDespiteBeta) parts.push("(Sector data delayed — using this stock's own volatility only.)");
   for (const e of events) {
     if (e === "DAY_HIGH_BREACHED") parts.push("Made a new high for the day.");
     if (e === "DAY_LOW_BREACHED") parts.push("Broke below the day's low.");

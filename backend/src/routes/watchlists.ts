@@ -87,12 +87,16 @@ export function watchlistsRouter(pool: Pool) {
   // Idempotent: adding a symbol that's already there is a 200, not an error.
   // A double-tap or a retried request must not surface as a failure.
   r.post("/api/watchlists/:id/items", async (req, res, next) => {
-    const client = await pool.connect();
+    // pool.connect() must be inside the try — see checkpoint.ts for why a
+    // rejected connect() outside it crashes the whole process instead of
+    // returning a clean error.
+    let client: PoolClient | undefined;
     try {
+      client = await pool.connect();
       if (!isUuid(req.params.id)) throw new AppError(404, "NOT_FOUND", "Watchlist not found");
       const { symbol } = Symbol.parse(req.body);
       await client.query("BEGIN");
-      const known = await client.query("SELECT 1 FROM symbols WHERE symbol = $1", [symbol]);
+      const known = await client.query("SELECT 1 FROM symbols WHERE symbol = $1 AND NOT is_index", [symbol]);
       if (known.rowCount === 0) throw new AppError(422, "UNKNOWN_SYMBOL", `Unknown symbol ${symbol}`);
       const owned = await client.query(
         "SELECT 1 FROM watchlists WHERE id = $1 AND user_id = $2 FOR UPDATE",
@@ -112,10 +116,10 @@ export function watchlistsRouter(pool: Pool) {
       await client.query("COMMIT");
       res.json(await loadWatchlist(pool, req.userId, req.params.id));
     } catch (err) {
-      await client.query("ROLLBACK").catch(() => {});
+      await client?.query("ROLLBACK").catch(() => {});
       next(err);
     } finally {
-      client.release();
+      client?.release();
     }
   });
 
@@ -163,8 +167,10 @@ export function watchlistsRouter(pool: Pool) {
   // list: the second writer gets a 409 carrying the current state, and the
   // client merges. No silent last-writer-wins.
   r.put("/api/watchlists/:id/items", async (req, res, next) => {
-    const client = await pool.connect();
+    // pool.connect() must be inside the try — see checkpoint.ts for why.
+    let client: PoolClient | undefined;
     try {
+      client = await pool.connect();
       if (!isUuid(req.params.id)) throw new AppError(404, "NOT_FOUND", "Watchlist not found");
       const { symbols, version } = Bulk.parse(req.body);
       await client.query("BEGIN");
@@ -185,7 +191,7 @@ export function watchlistsRouter(pool: Pool) {
       const unique = [...new Set(symbols)];
       if (unique.length > 0) {
         const known = await client.query<{ symbol: string }>(
-          "SELECT symbol FROM symbols WHERE symbol = ANY($1)",
+          "SELECT symbol FROM symbols WHERE symbol = ANY($1) AND NOT is_index",
           [unique],
         );
         if (known.rowCount !== unique.length) {
@@ -214,10 +220,10 @@ export function watchlistsRouter(pool: Pool) {
       await client.query("COMMIT");
       res.json(await loadWatchlist(pool, req.userId, req.params.id));
     } catch (err) {
-      await client.query("ROLLBACK").catch(() => {});
+      await client?.query("ROLLBACK").catch(() => {});
       next(err);
     } finally {
-      client.release();
+      client?.release();
     }
   });
 

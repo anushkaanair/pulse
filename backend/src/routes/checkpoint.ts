@@ -1,5 +1,5 @@
 import { Router } from "express";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { z } from "zod";
 import { AppError } from "../middleware/errorHandler.js";
 
@@ -10,8 +10,16 @@ const Body = z.object({ snapshotId: z.string().uuid() });
 export function checkpointRouter(pool: Pool) {
   const r = Router();
   r.post("/api/watchlists/:id/checkpoint", async (req, res, next) => {
-    const client = await pool.connect();
+    // `pool.connect()` itself can reject (pool exhausted / a stalled
+    // connection past connectionTimeoutMillis — see db/pool.ts) — it MUST
+    // be inside this try, not before it. Express 4 doesn't auto-catch a
+    // rejected promise from an async handler; outside the try, that
+    // rejection becomes an unhandled rejection and crashes the whole
+    // process instead of returning a clean 503. Reproduced live under
+    // torture-test load before this fix — a real bug, not hypothetical.
+    let client: PoolClient | undefined;
     try {
+      client = await pool.connect();
       const { snapshotId } = Body.parse(req.body);
       const snap = await client.query<{ user_id: string; watchlist_id: string; taken_at: Date }>(
         "SELECT user_id, watchlist_id, taken_at FROM snapshots WHERE id = $1",
@@ -48,10 +56,10 @@ export function checkpointRouter(pool: Pool) {
       await client.query("COMMIT");
       res.status(201).json({ takenAt: new Date(s.taken_at).toISOString() });
     } catch (err) {
-      await client.query("ROLLBACK").catch(() => {});
+      await client?.query("ROLLBACK").catch(() => {});
       next(err);
     } finally {
-      client.release();
+      client?.release();
     }
   });
   return r;
