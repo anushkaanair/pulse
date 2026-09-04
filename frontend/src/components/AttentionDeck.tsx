@@ -173,8 +173,8 @@ export function AttentionDeck({
                 transition: "transform .56s cubic-bezier(.2,.8,.2,1), opacity .42s ease",
                 background: `linear-gradient(150deg, rgba(0,190,140,${rim}), var(--line-2) 45%, var(--line) 100%)`,
                 boxShadow: isFront
-                  ? `0 42px 70px -28px rgba(0,0,0,.92), 0 0 60px -18px rgba(0,190,140,${rim * 0.85})`
-                  : "0 30px 54px -30px rgba(0,0,0,.85)",
+                  ? `0 42px 70px -28px var(--shadow-deck), 0 0 60px -18px rgba(0,190,140,${rim * 0.85})`
+                  : "0 30px 54px -30px var(--shadow-deck)",
                 filter: isFront ? "none" : `saturate(${1 - behind * 0.18}) blur(${behind * 0.6}px)`,
               }}
             >
