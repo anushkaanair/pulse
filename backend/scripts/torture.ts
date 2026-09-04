@@ -56,10 +56,30 @@ async function waitForHealth(timeoutMs = 15000): Promise<void> {
   throw new Error("server did not become healthy in time");
 }
 
+// detached:true puts the child in its own process group. `npx tsx <entry>`
+// spawns npx, which itself spawns a `node` process running the actual
+// server — killing only the npx wrapper (the default child.kill()) leaves
+// that inner node process orphaned and still listening. Bug found live: a
+// prior scale-check run left an orphaned server on its port, silently
+// contending for the same DB pool during the NEXT run and producing
+// confusing, non-reproducible latency numbers. killServer() below signals
+// the whole group so both processes actually die.
 function spawnServer(): ChildProcess {
-  const child = spawn("npx", ["tsx", ENTRY], { env: ENV, cwd: join(HERE, ".."), stdio: "ignore" });
+  const child = spawn("npx", ["tsx", ENTRY], { env: ENV, cwd: join(HERE, ".."), stdio: "ignore", detached: true });
   child.on("error", (err) => console.error("spawn error", err));
   return child;
+}
+function killServer(child: ChildProcess) {
+  if (!child.pid) return;
+  try {
+    process.kill(-child.pid, "SIGKILL"); // negative pid = whole process group
+  } catch {
+    try {
+      child.kill("SIGKILL");
+    } catch {
+      /* already dead */
+    }
+  }
 }
 
 async function api(path: string, opts: RequestInit & { userId?: string } = {}) {
@@ -176,7 +196,7 @@ async function main() {
 
   // ---- Kill -9 mid-run, respawn, keep driving ----
   console.log("\nSIGKILL...\n");
-  server.kill("SIGKILL");
+  killServer(server);
   await sleep(500);
   server = spawnServer();
   await waitForHealth();
@@ -271,7 +291,7 @@ async function main() {
   //      kill -9 + respawn, so it doubles as this assertion. Confirm explicitly. ----
   check("crash-safety: monotonicity check above ran after the SIGKILL/respawn", true, "see 'no regression' result above");
 
-  server.kill("SIGKILL");
+  killServer(server);
   await pool.end();
 
   console.log("\n" + "─".repeat(60));

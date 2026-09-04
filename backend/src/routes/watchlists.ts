@@ -195,10 +195,16 @@ export function watchlistsRouter(pool: Pool) {
         }
       }
       await client.query("DELETE FROM watchlist_items WHERE watchlist_id = $1", [req.params.id]);
-      for (const s of unique) {
+      if (unique.length > 0) {
+        // Single multi-row INSERT via UNNEST, not N sequential round-trips.
+        // Found via scripts/scale-check.ts: a 500-symbol bulk PUT looping
+        // one INSERT per row took ~500ms of pure round-trip time before
+        // any real work, and that cost only grows with watchlist size —
+        // exactly the "how does this scale" case the brief asks about.
         await client.query(
-          "INSERT INTO watchlist_items (watchlist_id, symbol) VALUES ($1, $2)",
-          [req.params.id, s],
+          `INSERT INTO watchlist_items (watchlist_id, symbol)
+           SELECT $1, s FROM unnest($2::text[]) AS s`,
+          [req.params.id, unique],
         );
       }
       await client.query(
