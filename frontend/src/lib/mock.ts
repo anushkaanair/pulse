@@ -106,7 +106,19 @@ export const mock = {
     return target;
   },
   deleteWatchlist: async (id: string): Promise<void> => { lists = lists.filter((l) => l.id !== id); },
-  watchlist: async (id: string) => { if (id !== current.id) throw new Error("Watchlist not found"); return current; },
+  // Any OTHER known list (the seeded empty decoy, or one created via the
+  // "+ Watchlist" modal) is a real, empty Watchlist — not an error. Only
+  // `current` carries the rich demo payload; everything else in `lists`
+  // still needs to open cleanly with zero items, the same as a real
+  // freshly-created list would. Found live: clicking "Long term" (the
+  // seeded second list) hit the `throw` below and rendered as a hard
+  // "Could not load this watchlist" error instead of an empty state.
+  watchlist: async (id: string) => {
+    if (id === current.id) return current;
+    const known = lists.find((l) => l.id === id);
+    if (!known) throw new Error("Watchlist not found");
+    return { id: known.id, name: known.name, version: known.version, items: [] };
+  },
   setSensitivity: async (id: string, symbol: string, sensitivity: Sensitivity) => { await mock.watchlist(id); current = { ...current, version: current.version + 1, items: current.items.map((entry) => entry.symbol === symbol ? { ...entry, sensitivity } : entry) }; return current; },
   addItem: async (id: string, symbol: string) => { await mock.watchlist(id); if (!symbols.some((entry) => entry.symbol === symbol)) throw new Error("Unknown symbol"); if (!current.items.some((entry) => entry.symbol === symbol)) current = { ...current, version: current.version + 1, items: [...current.items, item(symbol, "0.0000")] }; return current; },
   removeItem: async (id: string, symbol: string) => { await mock.watchlist(id); current = { ...current, version: current.version + 1, items: current.items.filter((entry) => entry.symbol !== symbol) }; return current; },

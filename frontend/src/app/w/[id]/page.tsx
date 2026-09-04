@@ -42,6 +42,8 @@ export default function WatchlistPage() {
   const [conflict, setConflict] = useState<{ theirs: WatchlistItem[]; mine: string[]; version: number }>();
   const [sort, setSort] = useState<{ key: "symbol" | "price" | "change" | "volume"; dir: 1 | -1 }>({ key: "symbol", dir: 1 });
 
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     let latestEtag: string | undefined;
@@ -210,7 +212,7 @@ export default function WatchlistPage() {
           </div>
         </div>
       ) : null}
-      <div className="mx-auto max-w-7xl px-4 pt-4 pb-8 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8">
+      <div className="mx-auto max-w-7xl px-4 pt-4 pb-24 lg:pb-8 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8">
 
         {/* Left Column - Main Content */}
         <div className="min-w-0">
@@ -237,33 +239,9 @@ export default function WatchlistPage() {
               </span>
               
               {changes.summary.meaningful > 0 ? (
-                <>
-                  <span className="rounded-full bg-[var(--amber)]/15 px-2.5 py-1 text-[11px] font-bold text-[var(--amber)] whitespace-nowrap border border-[var(--amber)]/30 shadow-sm">
-                    {changes.summary.meaningful} {changes.summary.meaningful === 1 ? "thing" : "things"} worth a look
-                  </span>
-                  
-                  {rankedForAttention.slice(0, 3).map((item) => (
-                    <span key={item.symbol} className="rounded-full border border-[var(--line-2)] bg-[var(--surface-3)] px-2.5 py-1 text-[11px] font-medium text-[var(--ink)] whitespace-nowrap shadow-sm">
-                      <span className="font-semibold">{item.symbol}</span>{" "}
-                      <span style={{ color: Number(item.change.pctSincePrev) >= 0 ? "var(--green)" : "var(--red)" }}>
-                        {Number(item.change.pctSincePrev) > 0 ? "+" : ""}{item.change.pctSincePrev}%
-                      </span>{" "}
-                      <span className="text-[var(--muted)]">({item.change.zScore !== null ? Math.abs(item.change.zScore).toFixed(1) + "σ" : "New"})</span>
-                    </span>
-                  ))}
-                  
-                  {rankedForAttention.length > 3 && (
-                    <span className="rounded-full border border-[var(--line)] bg-[var(--surface-2)] px-2.5 py-1 text-[11px] font-medium text-[var(--muted)] whitespace-nowrap">
-                      +{rankedForAttention.length - 3} more
-                    </span>
-                  )}
-
-                  {changes.summary.total - changes.summary.meaningful > 0 && (
-                    <span className="rounded-full border border-[var(--line)] bg-[var(--surface-2)] px-2.5 py-1 text-[11px] font-medium text-[var(--muted)] whitespace-nowrap">
-                      {changes.summary.total - changes.summary.meaningful} others: nothing meaningful
-                    </span>
-                  )}
-                </>
+                <span className="rounded-full bg-[var(--amber)]/15 px-2.5 py-1 text-[11px] font-bold text-[var(--amber)] whitespace-nowrap border border-[var(--amber)]/30 shadow-sm">
+                  {changes.summary.meaningful} {changes.summary.meaningful === 1 ? "thing" : "things"} worth a look
+                </span>
               ) : (
                 <span className="rounded-full border border-[var(--line)] bg-[var(--surface-2)] px-2.5 py-1 text-[11px] font-medium text-[var(--muted)] whitespace-nowrap">
                   No major updates
@@ -288,6 +266,11 @@ export default function WatchlistPage() {
               <p className="mt-2 text-xs text-[var(--muted)]">+{overflow} more meaningful, ranked lower — see the full list below.</p>
             ) : null}
           </section>
+
+          {/* Mobile Investments Card (shown only on mobile below attention deck) */}
+          <div className="block lg:hidden mb-6">
+            <InvestmentsCard items={changes.items} />
+          </div>
 
           {/* Full List */}
           <section>
@@ -336,75 +319,107 @@ export default function WatchlistPage() {
         </div>
 
         {/* Right Column - Sidebar */}
-        <aside className="flex flex-col gap-4">
-          {/* Watchlist Summary */}
-          <div className="rounded-2xl border border-[var(--line)] p-4" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Watchlist summary</h3>
-              <p className="numbers m-0 text-[22px] font-semibold tracking-tight">{watchlist.items.length}</p>
-            </div>
-            {/* Not "Meaningful changes" here — that count is already the
-                loudest thing on the page (the digest + the pill next to the
-                title). This row covers what neither of those do: how many
-                tracked stocks don't have enough price history yet for a
-                reliable signal, so a quiet one isn't mistaken for "nothing
-                happening" rather than "not enough data yet". */}
-            <div className="mt-3 flex items-center justify-between border-t border-[var(--line)] pt-2.5 text-[12.5px]">
-               <span className="text-[var(--muted)]">Thin history</span>
-               <span className="numbers font-semibold" style={{ color: lowConfidence > 0 ? "var(--amber)" : "var(--ink)" }}>{lowConfidence}</span>
-            </div>
-            <div className="mt-1.5 flex items-center justify-between text-[12.5px]">
-               <span className="text-[var(--muted)]">Time away</span>
-               <span className="font-medium">{changes.baseline.kind === "first-visit" ? "First visit" : (away(changes.baseline.awaySeconds) ?? "—")}</span>
-            </div>
-            {/* Resets your baseline to right now — a fresh reference point
-                for "what changed since" on your next visit. Labeled by what
-                it actually does, not "Refresh" (which reads like it's
-                needed to see fresh data — it isn't; the page already polls
-                on its own). */}
-            <button
-              onClick={markSeen} disabled={marking}
-              title="Resets your baseline to the current prices — future visits compare against this moment"
-              className="mt-3 w-full rounded-xl py-2 text-[12.5px] font-semibold text-[#0b0d0e] disabled:opacity-40 transition-opacity"
-              style={{ background: "linear-gradient(140deg, var(--amber-2), var(--amber))" }}
-            >
-               {marking ? "Resetting…" : "Reset baseline"}
-            </button>
-          </div>
-
-          <InvestmentsCard items={changes.items} />
-
-          <MarketTrends items={changes.items} />
-
-          <Link href={`/w/${id}/history`} className="rounded-2xl border border-[var(--line)] p-5 text-sm text-[var(--muted)] hover:text-[var(--ink)] transition-colors" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
-            View visit history →
-          </Link>
-
-          {/* Tools Widget */}
-          <div className="rounded-2xl border border-[var(--line)] p-5" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)] mb-4">Tools & Settings</h3>
-            <div className="flex flex-col gap-4">
-              <div className="border-t border-[var(--line)] pt-4">
-                <button onClick={() => { setEditing((value) => !value); setSymbolsText(watchlist.items.map((item) => item.symbol).join(", ")); }} className="text-left text-sm font-medium flex items-center gap-2" style={{ color: "var(--amber)" }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-                  {editing ? "Close bulk edit" : "Bulk edit stocks"}
-                </button>
-
-                {editing ? (
-                  <div className="mt-3 flex flex-col gap-3">
-                    <label className="sr-only" htmlFor="bulk-symbols">Stocks, comma separated</label>
-                    <textarea id="bulk-symbols" value={symbolsText} onChange={(event) => setSymbolsText(event.target.value)} rows={3} className="w-full rounded-xl border border-[var(--line-2)] bg-[var(--ground-2)] p-3 text-sm outline-none focus:border-[var(--amber)] transition-colors" />
-                    <button onClick={() => void saveBulk()} className="rounded-xl bg-[var(--ink)] px-4 py-2 text-sm font-medium text-[var(--ground)] hover:opacity-90 transition-opacity">Save list</button>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          </div>
+        {/* Right Column - Sidebar */}
+        <aside className="hidden lg:flex flex-col gap-4">
+          <SidebarContent />
         </aside>
       </div>
+
+      {/* Mobile Sticky Menu Button */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 lg:hidden pointer-events-auto">
+        <button onClick={() => setMobileMenuOpen(true)} className="bg-[var(--surface)] text-[var(--ink)] border border-[var(--line)] shadow-[0_8px_30px_rgb(0,0,0,0.12)] px-5 py-2.5 rounded-full font-medium text-[14px] flex items-center gap-2 hover:bg-[var(--surface-2)] transition-colors">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+          Tools & Summary
+        </button>
+      </div>
+
+      {/* Mobile Menu Slide Sleeve */}
+      <div 
+        className={`fixed inset-0 z-50 lg:hidden transition-opacity duration-300 ${mobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`} 
+        onClick={() => setMobileMenuOpen(false)}
+      >
+        {/* Backdrop */}
+        <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" />
+        
+        {/* Sliding Panel */}
+        <div 
+          className={`absolute inset-y-0 right-0 w-full sm:w-[400px] bg-[var(--ground)] shadow-2xl transition-transform duration-300 ease-out flex flex-col ${mobileMenuOpen ? 'translate-x-0' : 'translate-x-full'}`} 
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between border-b border-[var(--line)] p-5">
+            <h2 className="text-xl font-bold tracking-tight">Menu</h2>
+            <button onClick={() => setMobileMenuOpen(false)} className="p-2 -mr-2 text-[var(--muted)] hover:text-[var(--ink)] bg-[var(--surface)] rounded-full border border-[var(--line-2)]">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+          
+          <div className="p-5 flex-1 overflow-y-auto flex flex-col gap-4">
+            <SidebarContent isMobile={true} />
+          </div>
+        </div>
+      </div>
+
       {conflict ? <ConflictModal theirs={conflict.theirs} mine={conflict.mine} onKeepMine={() => void saveBulk(conflict.mine, conflict.version)} onKeepTheirs={() => { setWatchlist((current) => current ? { ...current, version: conflict.version, items: conflict.theirs } : current); setConflict(undefined); setEditing(false); }} onMerge={() => void saveBulk([...new Set([...conflict.theirs.map((item) => item.symbol), ...conflict.mine])], conflict.version)} /> : null}
     </main>
   );
+
+  function SidebarContent({ isMobile = false }: { isMobile?: boolean }) {
+    return (
+      <>
+        {/* Watchlist Summary */}
+        <div className="rounded-2xl border border-[var(--line)] p-4" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Watchlist summary</h3>
+            <p className="numbers m-0 text-[22px] font-semibold tracking-tight">{watchlist!.items.length}</p>
+          </div>
+          <div className="mt-3 flex items-center justify-between border-t border-[var(--line)] pt-2.5 text-[12.5px]">
+             <span className="text-[var(--muted)]">Thin history</span>
+             <span className="numbers font-semibold" style={{ color: lowConfidence > 0 ? "var(--amber)" : "var(--ink)" }}>{lowConfidence}</span>
+          </div>
+          <div className="mt-1.5 flex items-center justify-between text-[12.5px]">
+             <span className="text-[var(--muted)]">Time away</span>
+             <span className="font-medium">{changes!.baseline.kind === "first-visit" ? "First visit" : (away(changes!.baseline.awaySeconds) ?? "—")}</span>
+          </div>
+          <button
+            onClick={markSeen} disabled={marking}
+            title="Resets your baseline to the current prices — future visits compare against this moment"
+            className="mt-3 w-full rounded-xl py-2 text-[12.5px] font-semibold text-[#0b0d0e] disabled:opacity-40 transition-opacity"
+            style={{ background: "linear-gradient(140deg, var(--amber-2), var(--amber))" }}
+          >
+             {marking ? "Resetting…" : "Reset baseline"}
+          </button>
+        </div>
+
+        {!isMobile && <InvestmentsCard items={changes!.items} />}
+        <MarketTrends items={changes!.items} />
+
+        <Link href={`/w/${id}/history`} className="rounded-2xl border border-[var(--line)] p-5 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] transition-colors flex items-center justify-between" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
+          View visit history <span>→</span>
+        </Link>
+
+        {/* Tools Widget */}
+        <div className="rounded-2xl border border-[var(--line)] p-5" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)] mb-4">Settings</h3>
+          <div className="flex flex-col gap-4">
+            <div className="border-t border-[var(--line)] pt-4">
+              <button onClick={() => { setEditing((value) => !value); setSymbolsText(watchlist!.items.map((item) => item.symbol).join(", ")); }} className="text-left text-sm font-medium flex items-center gap-2" style={{ color: "var(--amber)" }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                {editing ? "Close bulk edit" : "Bulk edit stocks"}
+              </button>
+
+              {editing ? (
+                <div className="mt-3 flex flex-col gap-3">
+                  <label className="sr-only" htmlFor="bulk-symbols">Stocks, comma separated</label>
+                  <textarea id="bulk-symbols" value={symbolsText} onChange={(event) => setSymbolsText(event.target.value)} rows={3} className="w-full rounded-xl border border-[var(--line-2)] bg-[var(--ground-2)] p-3 text-sm outline-none focus:border-[var(--amber)] transition-colors" />
+                  <button onClick={() => { void saveBulk(); if (isMobile) setMobileMenuOpen(false); }} className="rounded-xl bg-[var(--ink)] px-4 py-2 text-sm font-medium text-[var(--ground)] hover:opacity-90 transition-opacity">Save list</button>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
 }
 
 // Only mounted above VIRTUALIZE_ABOVE items. A fixed-height scroll

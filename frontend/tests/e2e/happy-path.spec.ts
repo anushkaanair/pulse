@@ -23,7 +23,11 @@ test("open a watchlist and see the ranked meaningful changes", async ({ page }) 
   // Full list shows all 6 symbols, including ones with kind:"none" — the
   // watchlist-summary card's own tracked count is the stable place to
   // check this now that the page header no longer repeats the count.
-  await expect(page.getByText("Watchlist summary").locator("..").getByText("6")).toBeVisible();
+  // .first(): the mobile slide-out menu mounts its own copy of this same
+  // card (hidden via CSS, not unmounted), so both a desktop and a mobile
+  // instance genuinely exist in the DOM at once — real duplication from
+  // the responsive layout, not a bug.
+  await expect(page.getByText("Watchlist summary").locator("..").getByText("6").first()).toBeVisible();
   // Scoped to the tracked-stocks list: the symbol also appears in the live
   // market rail's ticker-tape (twice, for the seamless loop), so a bare
   // getByText would match multiple nodes.
