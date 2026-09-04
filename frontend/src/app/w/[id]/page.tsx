@@ -69,7 +69,14 @@ export default function WatchlistPage() {
 
   if (error) { const message = error instanceof ApiRequestError ? `${error.response.error} (${error.response.code})` : "Could not load this watchlist."; return <main className="mx-auto max-w-[880px] px-4 py-12"><Link href="/" className="text-sm underline underline-offset-4 hover:text-[var(--ink)]">Back to watchlists</Link><p className="mt-8 text-sm text-[var(--red)]">{message}</p></main>; }
   if (!watchlist || !changes) return <main className="mx-auto max-w-[880px] px-4 py-12 text-sm text-[var(--muted)]">Loading your catch-up…</main>;
+  // Ranked, not thresholded: `changes.items` already arrives sorted by the
+  // engine's own attention score, so the first `attentionBudget` of them
+  // ARE the ones that most deserve a first glance. Triage, not a flood —
+  // the rest are still real and still visible, just in the full list below
+  // rather than competing for attention above it.
   const meaningful = changes.items.filter((item) => item.change.kind !== "none");
+  const rankedForAttention = meaningful.slice(0, changes.attentionBudget);
+  const overflow = meaningful.length - rankedForAttention.length;
 
   const changeBySymbol = new Map(changes.items.map((c) => [c.symbol, c.change]));
   const sortVal = (it: WatchlistItem, key: typeof sort.key) =>
@@ -106,9 +113,12 @@ export default function WatchlistPage() {
                <p className="text-sm text-[var(--muted)] bg-[var(--surface)] p-6 rounded-xl border border-[var(--line)]">Nothing meaningful changed since {changes.baseline.takenAt ? new Date(changes.baseline.takenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "your last visit"}.</p>
             ) : (
                <div className="flex gap-4 overflow-x-auto pb-4 hide-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
-                 {meaningful.map((item) => <ChangeCard key={item.symbol} item={item} />)}
+                 {rankedForAttention.map((item) => <ChangeCard key={item.symbol} item={item} />)}
                </div>
             )}
+            {overflow > 0 ? (
+              <p className="mt-2 text-xs text-[var(--muted)]">+{overflow} more meaningful, ranked lower — see the full list below.</p>
+            ) : null}
           </section>
 
           {/* Full List */}

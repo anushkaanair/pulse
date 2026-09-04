@@ -29,6 +29,7 @@ function changesData(): ChangesResponse {
       feed: { status: faults.outage ? "stale" : "live", lagSeconds: faults.outage ? 212 : 1 },
       digest: "First look — this is your baseline. Come back later and this line will tell you what changed.",
       summary: { meaningful: 0, total: current.items.length, stale: 0, newSinceLast: 0 },
+      attentionBudget: 5,
       items: current.items.map((entry) => ({
         ...entry, quote: entry.quote ?? quote(entry.symbol, "0"),
         change: { kind: "none", pctSincePrev: null, zScore: null, events: [], confidence: "high", attention: 0, sensitivity: entry.sensitivity, why: "First look — this is your baseline." },
@@ -43,7 +44,7 @@ function changesData(): ChangesResponse {
       : { kind: "none", pctSincePrev: "+0.13", zScore: 0.2, events: [], confidence: "high", attention: 0.2, sensitivity: entry.sensitivity, why: "No meaningful change." },
   }));
   const meaningful = acknowledged ? 0 : 3;
-  return { snapshotId: "mock-snapshot-1", baseline: { takenAt: acknowledged ? now : null, kind: acknowledged ? "checkpoint" : "first-visit", awaySeconds: acknowledged ? 9000 : null }, asOf: now, feed: { status: faults.outage ? "stale" : "live", lagSeconds: faults.outage ? 212 : 1 }, digest: acknowledged ? "Nothing meaningful changed since you last looked." : "Since 2 hours ago: 3 things worth a look — TCS −3.09%, SUZLON on heavy volume, RELIANCE price corrected.", summary: { meaningful, total: current.items.length, stale: current.items.filter((entry) => entry.stale).length, newSinceLast: 0 }, items: changes };
+  return { snapshotId: "mock-snapshot-1", baseline: { takenAt: acknowledged ? now : null, kind: acknowledged ? "checkpoint" : "first-visit", awaySeconds: acknowledged ? 9000 : null }, asOf: now, feed: { status: faults.outage ? "stale" : "live", lagSeconds: faults.outage ? 212 : 1 }, digest: acknowledged ? "Nothing meaningful changed since you last looked." : "Since 2 hours ago: 3 things worth a look — TCS −3.09%, SUZLON on heavy volume, RELIANCE price corrected.", summary: { meaningful, total: current.items.length, stale: current.items.filter((entry) => entry.stale).length, newSinceLast: 0 }, attentionBudget: 5, items: changes };
 }
 
 export const mock = {

@@ -25,7 +25,8 @@ export interface ChangesResponse {
   snapshotId: string;
   baseline: { takenAt: string | null; kind: "checkpoint" | "first-visit"; awaySeconds: number | null };
   asOf: string; feed: { status: FeedStatus; lagSeconds: number | null }; digest: string;
-  summary: { meaningful: number; total: number; stale: number; newSinceLast: number }; items: ChangeItem[];
+  summary: { meaningful: number; total: number; stale: number; newSinceLast: number };
+  attentionBudget: number; items: ChangeItem[];
 }
 export interface ConflictResponse { error: string; code: "VERSION_CONFLICT"; current: { version: number; items: WatchlistItem[] } }
 export interface FaultConfig { outage?: boolean; delayMs?: number; outOfOrderPct?: number; duplicatePct?: number; correctionPct?: number }

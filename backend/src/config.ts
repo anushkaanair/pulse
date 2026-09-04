@@ -31,4 +31,13 @@ export const config = {
   absThresholdPct: num("ABS_THRESHOLD_PCT", 1.5),
   volumeSpikeMultiple: num("VOLUME_SPIKE_MULTIPLE", 2.0),
   gapPct: num("GAP_PCT", 2.0),
+
+  // "Quickly understand," not "see everything above threshold." A volatile
+  // day can put a dozen symbols over the meaningful bar; surfacing all of
+  // them as ranked cards is a flood, not a triage. This caps how many are
+  // pushed into the ranked "most meaningful" view — the rest are still
+  // real, still visible, just in the full sortable list below rather than
+  // competing for first-glance attention. The engine's own ranking (by
+  // `attention`, see engine.ts) decides which ones make the cut.
+  attentionBudget: num("ATTENTION_BUDGET", 5),
 };

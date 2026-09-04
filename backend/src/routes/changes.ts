@@ -105,6 +105,11 @@ export function changesRouter(pool: Pool, ingestor: Ingestor) {
         feed: (({ status, lagSeconds }) => ({ status, lagSeconds }))(feedStatus(ingestor.provider.lastTickAt(), now)),
         digest: buildDigest(results, baselineKind, elapsedMs),
         summary,
+        // A product decision, not a UI afterthought: how many ranked cards
+        // deserve first-glance attention before the rest belong in the full
+        // list instead. `items` is already sorted by the engine's own
+        // attention ranking, so the client just takes the top N of it.
+        attentionBudget: config.attentionBudget,
         items: results.slice(0, limit).map((x) => {
           const quote = quoteBySymbol.get(x.symbol) ?? null;
           return { symbol: x.symbol, name: x.name, quote, stale: quote ? quote.stale : true, change: x.change };
