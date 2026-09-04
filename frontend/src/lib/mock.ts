@@ -1,4 +1,4 @@
-import type { ChangesPoll, ChangesResponse, FaultConfig, Health, Quote, Sensitivity, SymbolSearchResult, Watchlist, WatchlistItem, WatchlistSummary } from "./api";
+import { ApiRequestError, type ChangesPoll, type ChangesResponse, type ConflictResponse, type FaultConfig, type Health, type Quote, type Sensitivity, type SymbolSearchResult, type Watchlist, type WatchlistItem, type WatchlistSummary } from "./api";
 
 const now = "2026-09-04T11:42:13.000Z";
 const symbols: SymbolSearchResult[] = [
@@ -36,7 +36,7 @@ export const mock = {
   setSensitivity: async (id: string, symbol: string, sensitivity: Sensitivity) => { await mock.watchlist(id); current = { ...current, version: current.version + 1, items: current.items.map((entry) => entry.symbol === symbol ? { ...entry, sensitivity } : entry) }; return current; },
   addItem: async (id: string, symbol: string) => { await mock.watchlist(id); if (!symbols.some((entry) => entry.symbol === symbol)) throw new Error("Unknown symbol"); if (!current.items.some((entry) => entry.symbol === symbol)) current = { ...current, version: current.version + 1, items: [...current.items, item(symbol, "0.0000")] }; return current; },
   removeItem: async (id: string, symbol: string) => { await mock.watchlist(id); current = { ...current, version: current.version + 1, items: current.items.filter((entry) => entry.symbol !== symbol) }; return current; },
-  replaceItems: async (id: string, requested: string[], version: number) => { await mock.watchlist(id); if (version !== current.version) throw new Error("VERSION_CONFLICT"); current = { ...current, version: current.version + 1, items: requested.map((symbol) => current.items.find((entry) => entry.symbol === symbol) ?? item(symbol, "0.0000")) }; return current; },
+  replaceItems: async (id: string, requested: string[], version: number) => { await mock.watchlist(id); if (version !== current.version) { const response: ConflictResponse = { error: "Watchlist version conflict", code: "VERSION_CONFLICT", current: { version: current.version, items: current.items } }; throw new ApiRequestError(response, 409); } current = { ...current, version: current.version + 1, items: requested.map((symbol) => current.items.find((entry) => entry.symbol === symbol) ?? item(symbol, "0.0000")) }; return current; },
   changes: async (_id: string, _limit: number, etag?: string): Promise<ChangesPoll> => etag === "mock-snapshot-1" ? { data: null, etag, notModified: true } : { data: changesData(), etag: "mock-snapshot-1", notModified: false },
   checkpoint: async (_id: string, _snapshotId: string) => { acknowledged = true; return { takenAt: now }; },
   quotes: async (requested: string[]) => current.items.filter((entry) => requested.includes(entry.symbol)).flatMap((entry) => entry.quote ? [entry.quote] : []),
