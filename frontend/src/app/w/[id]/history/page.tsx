@@ -36,14 +36,14 @@ export default function HistoryPage() {
 
   if (error) {
     const message = error instanceof ApiRequestError ? `${error.response.error} (${error.response.code})` : "Could not load history.";
-    return <main className="mx-auto max-w-[880px] px-4 py-12"><Link href={`/w/${id}`} className="text-sm underline underline-offset-4">Back</Link><p className="mt-8 text-sm text-[var(--red)]">{message}</p></main>;
+    return <main className="mx-auto max-w-[880px] px-4 py-12"><Link href={`/w/${id}`} className="text-sm underline underline-offset-4 hover:text-[var(--ink)]">Back</Link><p className="mt-8 text-sm text-[var(--red)]">{message}</p></main>;
   }
   if (!visits) return <main className="mx-auto max-w-[880px] px-4 py-12 text-sm text-[var(--muted)]">Loading history…</main>;
 
   return (
     <main className="min-h-screen">
       <div className="mx-auto max-w-[880px] px-4 py-8 sm:px-8">
-        <Link href={`/w/${id}`} className="text-xs text-[var(--muted)] underline underline-offset-4">Watchlist</Link>
+        <Link href={`/w/${id}`} className="text-xs text-[var(--muted)] underline underline-offset-4 hover:text-[var(--ink)]">Watchlist</Link>
         <h1 className="mt-2 text-[28px] font-medium tracking-tight">History</h1>
         <p className="mt-2 max-w-md text-sm text-[var(--muted)]">A plain comparison between two of your past visits — not a significance judgment, just what the price was and what it became.</p>
 

@@ -58,7 +58,7 @@ export default function WatchlistsPage() {
           <h2 className="text-sm font-medium">New watchlist</h2>
           <label htmlFor="watchlist-name" className="sr-only">Watchlist name</label>
           <input id="watchlist-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Long term" className="mt-3 w-full border-b border-[var(--line)] bg-transparent py-2 text-sm outline-none placeholder:text-[var(--muted)] focus:border-[var(--ink)]" />
-          <button disabled={creating || !name.trim()} className="mt-4 w-full bg-[var(--ink)] px-3 py-2 text-sm text-[var(--ground)] disabled:opacity-40">{creating ? "Creating…" : "Create watchlist"}</button>
+          <button disabled={creating || !name.trim()} className="mt-4 w-full bg-[var(--ink)] px-3 py-2 text-sm text-[var(--ground)] disabled:opacity-40 enabled:hover:opacity-85">{creating ? "Creating…" : "Create watchlist"}</button>
         </form>
       </section>
     </main>
