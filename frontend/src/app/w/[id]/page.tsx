@@ -247,6 +247,23 @@ export default function WatchlistPage() {
                   No major updates
                 </span>
               )}
+              {/* The count alone doesn't say WHICH stocks — the actual
+                  "since you last looked" chips, restored here after the
+                  mobile-layout pass had quietly dropped them down to just
+                  a number. This is the line the whole product's pitch
+                  rests on; it needs to name names, not just count them. */}
+              {meaningful.slice(0, 3).map((item) => (
+                <span key={item.symbol} className="numbers rounded-full bg-[var(--surface-2)] border border-[var(--line)] px-2.5 py-1 text-[11px] font-medium whitespace-nowrap">
+                  <span className="text-[var(--ink-2)]">{item.symbol}</span>{" "}
+                  <span style={{ color: item.change.pctSincePrev?.startsWith("-") ? "var(--red)" : "var(--green)" }}>
+                    {item.change.pctSincePrev ? `${item.change.pctSincePrev}%` : "new"}
+                  </span>
+                  {item.change.zScore !== null ? <span className="text-[var(--muted)]"> ({Math.abs(item.change.zScore).toFixed(1)}σ)</span> : null}
+                </span>
+              ))}
+              {meaningful.length > 3 ? (
+                <span className="text-[11px] text-[var(--muted)] whitespace-nowrap">+{meaningful.length - 3} more</span>
+              ) : null}
             </div>
             {changes.summary.meaningful === 0 ? (
                <div className="relative">
