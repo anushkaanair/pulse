@@ -441,7 +441,12 @@ export default function WatchlistPage() {
           </button>
         </div>
 
-        {!isMobile && <InvestmentsCard items={changes!.items} id={id} />}
+        {/* Also shown on mobile now (previously desktop-only here, to avoid
+            a duplicate with the inline copy further down the page) — the
+            "Tools & Summary" sheet is the natural place a mobile user
+            checks for it, and it was invisible from there entirely. A
+            second entry point costs nothing; being unreachable did. */}
+        <InvestmentsCard items={changes!.items} id={id} />
         <MarketTrends items={changes!.items} />
 
         <Link href={`/w/${id}/history`} className="rounded-2xl border border-[var(--line)] p-5 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] transition-colors flex items-center justify-between" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>

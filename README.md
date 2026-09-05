@@ -42,6 +42,25 @@ and [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md) (the UI language).
   theirs / merge) if it changed elsewhere in the meantime.
 - **Multiple watchlists** — create and switch between separate watchlists
   from `/app`, each with its own baseline, history, and paper portfolio.
+- **The "second clock" + retractions** — a significant move is tracked
+  independently of your visits, so "quiet for weeks, just woke up" is a real
+  signal, not a visit-count artifact; if a triggering tick is later
+  corrected below threshold, that's shown as a visible retraction, never
+  silently dropped.
+- **Attention budget** — caps how many cards the deck can surface at once,
+  so a genuinely volatile day is a triage, not a flood of everything that
+  moved.
+- **Sparklines** — a per-symbol price-history mini-chart inside each
+  expanded attention card.
+- **Starter watchlist packs** — one-click preset symbol lists so a brand
+  new, empty watchlist isn't a dead end.
+- **Market Rail + Market Trends** — a live scrolling ticker and sector-level
+  trend summary on the dashboard, independent of your own watchlist.
+- **List virtualization** — kicks in above 100 tracked symbols, so the full
+  list stays smooth at scale instead of degrading with watchlist size.
+- **Dark / light theme toggle.**
+- **Built-in demo walkthrough** — a guided first-run tour of the product for
+  a new visitor, not just a cold empty screen.
 
 ## Screenshots
 
