@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { HeroIllustration } from "@/components/HeroIllustration";
-import { api, type Quote } from "@/lib/api";
+import { api, withRetry, type Quote } from "@/lib/api";
 
 const DERIVED_INDICES: { symbol: string; base: number }[] = [
   { symbol: "SENSEX", base: 72000 },
@@ -20,6 +20,11 @@ const DERIVED_INDICES: { symbol: string; base: number }[] = [
 export default function LandingPage() {
   const router = useRouter();
   const [nifty, setNifty] = useState<Quote | null>(null);
+  // If the ticker feed can't be reached even after retries, the strip is
+  // hidden entirely rather than left showing "Loading market…" forever —
+  // the hero and "Get started" are what matter, and a permanent loading
+  // sliver reads as broken.
+  const [tickerFailed, setTickerFailed] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark" | null>(null);
 
   useEffect(() => {
@@ -42,7 +47,7 @@ export default function LandingPage() {
 
   useEffect(() => {
     let cancelled = false;
-    api.quotes(["NIFTY"]).then((qs) => { if (!cancelled) setNifty(qs[0] ?? null); }).catch(() => {});
+    withRetry(() => api.quotes(["NIFTY"])).then((qs) => { if (!cancelled) setNifty(qs[0] ?? null); }).catch(() => { if (!cancelled) setTickerFailed(true); });
     // Marks that this browser tab has actually seen the homepage — /app
     // checks this and bounces straight back here if it's missing, so a
     // direct/bookmarked link to /app can't skip the intro. Session-scoped
@@ -87,7 +92,9 @@ export default function LandingPage() {
         </div>
       </div>
 
-      {/* 2. Live ticker */}
+      {/* 2. Live ticker — hidden entirely if the feed can't be reached, so
+          the page never carries a permanent "Loading market…" sliver. */}
+      {!(tickerFailed && !nifty) && (
       <div className="marquee-mask relative w-full overflow-hidden border-b border-[var(--line)] bg-[var(--surface-2)] py-3 text-[13px] font-medium tracking-wide">
         {nifty ? (
           <div className="marquee-track items-center">
@@ -112,6 +119,7 @@ export default function LandingPage() {
           <div className="text-center text-[var(--muted)]">Loading market…</div>
         )}
       </div>
+      )}
 
       {/* 3. Hero Section */}
       <div className="pt-10 pb-16 text-center">

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState, useMemo } from "react";
-import { api, ApiRequestError, type TimelineDiffItem, type TimelineDiffResponse, type TimelineVisit } from "@/lib/api";
+import { api, ApiRequestError, withRetry, type TimelineDiffItem, type TimelineDiffResponse, type TimelineVisit } from "@/lib/api";
 
 export default function HistoryPage() {
   const { id } = useParams<{ id: string }>();
@@ -19,7 +19,8 @@ export default function HistoryPage() {
   const [sectorFilter, setSectorFilter] = useState("All");
   
   useEffect(() => {
-    void api.timeline(id).then((response) => {
+    // Retry the first read so a transient blip doesn't dead-end the page.
+    void withRetry(() => api.timeline(id)).then((response) => {
       setVisits(response.visits);
       if (response.visits.length) setSelected(response.visits[0].snapshotId);
     }).catch(setError);
@@ -27,7 +28,7 @@ export default function HistoryPage() {
 
   useEffect(() => {
     if (!selected) return;
-    void api.timelineDiff(id, selected).then(setDiff).catch(setError);
+    void withRetry(() => api.timelineDiff(id, selected)).then(setDiff).catch(setError);
   }, [id, selected]);
 
   const formattedVisits = useMemo(() => {
