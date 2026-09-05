@@ -114,8 +114,10 @@ export function AttentionDeck({
       const now = Date.now();
       if (now - wheelLock.current < 260) return;
       wheelLock.current = now;
+      // Navigating (wheel/arrow/swipe) never changes compact vs. expanded —
+      // it only changes which card is front. Only clicking the card itself
+      // opens or closes it.
       setActive(next);
-      setExpanded(true);
     };
     node.addEventListener("wheel", onWheel, { passive: false });
     return () => node.removeEventListener("wheel", onWheel);
@@ -138,33 +140,49 @@ export function AttentionDeck({
     setParallax({ x: ((event.clientY - r.top) / r.height - 0.5) * -7, y: ((event.clientX - r.left) / r.width - 0.5) * 16 });
   };
   const onKey = (event: React.KeyboardEvent) => {
-    if (event.key === "ArrowRight") { event.preventDefault(); setActive((a) => Math.min(items.length - 1, a + 1)); setExpanded(true); }
-    if (event.key === "ArrowLeft") { event.preventDefault(); setActive((a) => Math.max(0, a - 1)); setExpanded(true); }
+    // Arrow keys only move the deck — they never open or close the card.
+    if (event.key === "ArrowRight") { event.preventDefault(); setActive((a) => Math.min(items.length - 1, a + 1)); }
+    if (event.key === "ArrowLeft") { event.preventDefault(); setActive((a) => Math.max(0, a - 1)); }
     if (event.key === "Escape" && expanded) { event.preventDefault(); setExpanded(false); }
   };
 
   const touchX = useRef<number | null>(null);
+  const touchY = useRef<number | null>(null);
   const touchTime = useRef<number>(0);
+  // Mobile browsers synthesize a "click" shortly after touchend at the same
+  // coordinates. Once a touch gesture has already been consumed as a swipe,
+  // that trailing click must be swallowed — otherwise every swipe was
+  // immediately followed by a phantom tap that re-toggled the card the
+  // finger happened to land on, which is what made swiping feel "broken."
+  const suppressClick = useRef(false);
   const onTouchStart = (event: React.TouchEvent) => {
     if (event.touches.length !== 1) return;
     touchX.current = event.touches[0].clientX;
+    touchY.current = event.touches[0].clientY;
     touchTime.current = Date.now();
   };
   const onTouchEnd = (event: React.TouchEvent) => {
-    if (touchX.current === null) return;
+    if (touchX.current === null || touchY.current === null) return;
     const endX = event.changedTouches[0].clientX;
-    const diff = touchX.current - endX;
+    const endY = event.changedTouches[0].clientY;
+    const diffX = touchX.current - endX;
+    const diffY = touchY.current - endY;
     const duration = Date.now() - touchTime.current;
     touchX.current = null;
-    
-    // Quick swipe of >40px
-    if (Math.abs(diff) > 40 && duration < 600) {
-      if (diff > 0) {
+    touchY.current = null;
+
+    // A real horizontal swipe: enough lateral travel, fast enough, and
+    // clearly more horizontal than vertical (so a vertical page-scroll
+    // never gets misread as a card change).
+    if (Math.abs(diffX) > 40 && duration < 600 && Math.abs(diffX) > Math.abs(diffY)) {
+      suppressClick.current = true;
+      // Swiping only moves the deck — same rule as the arrows/wheel: it
+      // never opens or closes whichever card ends up in front.
+      if (diffX > 0) {
         setActive((a) => Math.min(items.length - 1, a + 1));
       } else {
         setActive((a) => Math.max(0, a - 1));
       }
-      setExpanded(true);
     }
   };
 
@@ -241,6 +259,9 @@ export function AttentionDeck({
               aria-expanded={isFront ? expanded : undefined}
               aria-label={isFront ? `${item.symbol}: ${item.change.why}. Open details` : `Bring ${item.symbol} to the front`}
               onClick={() => {
+                // Swallow the ghost click a touch swipe leaves behind — it
+                // must not re-toggle whatever card the finger lifted off of.
+                if (suppressClick.current) { suppressClick.current = false; return; }
                 if (isFront) {
                   setExpanded((o) => { const next = !o; if (next) onOpen?.(item.symbol); return next; });
                 } else {
@@ -366,23 +387,26 @@ export function AttentionDeck({
 
       {items.length > 1 ? (
         <>
+          {/* Both arrows only move the deck — never open/close the card —
+              and stay visible (dimmed, not display:none) at either end so
+              it's always obvious which direction has more to browse. */}
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); setActive((a) => Math.max(0, a - 1)); setExpanded(true); }}
+            onClick={(e) => { e.stopPropagation(); setActive((a) => Math.max(0, a - 1)); }}
             disabled={active === 0}
             aria-label="Previous"
-            className="absolute left-2 sm:left-4 top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-[var(--muted)] transition-opacity hover:text-[var(--ink)] disabled:opacity-0"
+            className="absolute left-2 sm:left-4 top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-[var(--muted)] transition-opacity hover:text-[var(--ink)] disabled:opacity-30 disabled:pointer-events-none"
             style={{ background: "var(--surface-3)", border: "1px solid var(--line-2)" }}
           >
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M10 13L5 8l5-5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </button>
-          
+
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); setActive((a) => Math.min(items.length - 1, a + 1)); setExpanded(true); }}
+            onClick={(e) => { e.stopPropagation(); setActive((a) => Math.min(items.length - 1, a + 1)); }}
             disabled={active >= items.length - 1}
             aria-label="Next"
-            className="absolute right-2 sm:right-4 top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-[var(--muted)] transition-opacity hover:text-[var(--ink)] disabled:opacity-0"
+            className="absolute right-2 sm:right-4 top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-[var(--muted)] transition-opacity hover:text-[var(--ink)] disabled:opacity-30 disabled:pointer-events-none"
             style={{ background: "var(--surface-3)", border: "1px solid var(--line-2)" }}
           >
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -396,7 +420,7 @@ export function AttentionDeck({
             <button
               key={item.symbol}
               aria-label={`Show ${item.symbol}`}
-              onClick={() => { setActive(index); setExpanded(true); }}
+              onClick={() => setActive(index)}
               className="h-1.5 rounded-full transition-all"
               style={{ width: index === active ? 20 : 6, background: index === active ? "var(--amber)" : "var(--line-2)" }}
             />
