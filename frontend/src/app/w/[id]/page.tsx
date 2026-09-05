@@ -20,6 +20,16 @@ import { api, ApiRequestError, withRetry, type ChangesResponse, type ConflictRes
 // the mounted node count roughly constant regardless of list size.
 const VIRTUALIZE_ABOVE = 100;
 
+// One-click fixes for the empty-first-visit problem: a brand-new watchlist
+// (and every fresh demo user) starts with nothing to show a baseline
+// against. These reuse the existing bulk-replace mutation — no new backend
+// endpoint — so they're just a curated symbol list, not new plumbing.
+const STARTER_PACKS: { label: string; symbols: string[] }[] = [
+  { label: "Nifty Top 10", symbols: ["RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK", "HINDUNILVR", "ITC", "SBIN", "BHARTIARTL", "LT"] },
+  { label: "Banking", symbols: ["HDFCBANK", "ICICIBANK", "KOTAKBANK", "AXISBANK", "SBIN", "INDUSINDBK"] },
+  { label: "IT", symbols: ["TCS", "INFY", "HCLTECH", "WIPRO", "TECHM"] },
+];
+
 function away(seconds: number | null) { if (!seconds) return null; return seconds >= 3600 ? `${Math.floor(seconds / 3600)}h` : `${Math.max(1, Math.floor(seconds / 60))}m`; }
 
 const NEW_LIST_MAX = 18;
@@ -317,7 +327,21 @@ export default function WatchlistPage() {
                </div>
 
                {watchlist.items.length === 0 ? (
-                 <p className="p-8 text-center text-sm text-[var(--muted)]">This watchlist is empty. Add a stock to start a baseline.</p>
+                 <div className="p-8 text-center">
+                   <p className="text-sm text-[var(--muted)]">This watchlist is empty. Add a stock to start a baseline.</p>
+                   <p className="mt-4 text-xs text-[var(--muted)]">Or start from a preset:</p>
+                   <div className="mt-2.5 flex flex-wrap justify-center gap-2">
+                     {STARTER_PACKS.map((pack) => (
+                       <button
+                         key={pack.label}
+                         onClick={() => void saveBulk(pack.symbols, watchlist.version)}
+                         className="rounded-full border border-[var(--line)] bg-[var(--surface-2)] px-4 py-2 text-xs font-medium text-[var(--ink-2)] transition-colors hover:border-[var(--amber)] hover:text-[var(--amber)]"
+                       >
+                         {pack.label}
+                       </button>
+                     ))}
+                   </div>
+                 </div>
                ) : watchlist.items.length > VIRTUALIZE_ABOVE ? (
                  <VirtualizedRows items={sortedItems} changes={changes} sparklines={sparklines} id={id} refreshWatchlist={refreshWatchlist} />
                ) : (
