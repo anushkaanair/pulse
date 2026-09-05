@@ -1,14 +1,15 @@
-# Smart Market Watchlist
+# Pulse
 
-A watchlist that doesn't just show prices — it tells you exactly what
-**meaningfully changed** since you last looked, ranked by how unusual it is
-for that specific stock, over a feed that behaves like a real one: delayed,
-occasionally out of order, sometimes duplicated, sometimes corrected.
+**Pulse** is a market watchlist that doesn't just show prices — it tells you
+exactly what **meaningfully changed** since you last looked, ranked by how
+unusual it is for that specific stock, over a feed that behaves like a real
+one: delayed, occasionally out of order, sometimes duplicated, sometimes
+corrected.
 
-Full reasoning: [`INTERPRETATION.md`](INTERPRETATION.md) (what and why),
-[`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) (architecture, schema, API
-contract, edge cases), [`DECISIONS.md`](DECISIONS.md) (every non-obvious
-choice, including three bugs found and fixed by the test suite itself).
+Full reasoning: [`DECISIONS.md`](DECISIONS.md) (every non-obvious choice,
+including three bugs found and fixed by the test suite itself),
+[`RESILIENCE.md`](RESILIENCE.md) (failure modes and how the system degrades),
+and [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md) (the UI language).
 
 ## Quick start
 
@@ -58,7 +59,7 @@ Each user's "what changed" is computed **on read**, diffed against a
 timestamp, so it's immune to the feed later rewriting the past. "Meaningful"
 is a z-score against the stock's own trailing volatility, scaled by how long
 the user's been away, with a per-symbol quiet/normal/loud override. Full
-diagram and schema: [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) §3–5.
+diagram and schema: [`DECISIONS.md`](DECISIONS.md).
 
 ## Project structure
 
@@ -70,7 +71,7 @@ backend/                 Express + TypeScript + Postgres
   src/db/migrations/     schema, applied on `npm run migrate`
   scripts/torture.ts     the invariant proof — see above
 frontend/                Next.js + TypeScript + Tailwind
-docs (repo root)          interpretation, full spec, design system, decisions
+docs (repo root)          DECISIONS, RESILIENCE, DESIGN_SYSTEM, PITCH
 ```
 
 ## Environment variables
@@ -99,7 +100,7 @@ curl -X POST localhost:4000/api/_sim/faults \
 Watch the UI degrade honestly (stale badges, feed status banner) instead of
 breaking or lying about freshness. Clear it with `{"outage":false}`.
 
-## Known limitations (deliberate — see `IMPLEMENTATION_PLAN.md` §7)
+## Known limitations (deliberate — see `DECISIONS.md`)
 
 No real authentication (`X-User-Id` header only), no WebSockets (polling +
 ETag by design — the problem is state-on-return, not live ticking), no real
