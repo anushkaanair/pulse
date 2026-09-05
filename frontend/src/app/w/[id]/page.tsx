@@ -12,7 +12,7 @@ import { InvestmentsCard } from "@/components/InvestmentsCard";
 import { MarketRail } from "@/components/MarketRail";
 import { MarketTrends } from "@/components/MarketTrends";
 import { WatchlistRow } from "@/components/WatchlistRow";
-import { api, ApiRequestError, type ChangesResponse, type ConflictResponse, type Sensitivity, type Sparklines, type Watchlist, type WatchlistSummary, type WatchlistItem } from "@/lib/api";
+import { api, ApiRequestError, withRetry, type ChangesResponse, type ConflictResponse, type Sensitivity, type Sparklines, type Watchlist, type WatchlistSummary, type WatchlistItem } from "@/lib/api";
 
 // Below this, real DOM rows are simpler and there's no cost to justify
 // virtualizing. Above it, a plain map() renders every row's DOM eagerly
@@ -56,9 +56,12 @@ export default function WatchlistPage() {
     // (headless test runners do this by default) — gating the FIRST load
     // on visibility was a real bug, not just a testing inconvenience: a
     // background tab would show "Loading..." forever until focused.
-    const fetchChanges = async () => {
+    // retry=true only for the FIRST load — the fetch the user waits on before
+    // anything is on screen. Recurring/background polls pass false: a failed
+    // poll should be skipped and retried on the next 15s tick, not hammered.
+    const fetchChanges = async (retry = false) => {
       try {
-        const response = await api.changes(id, 20, latestEtag);
+        const response = retry ? await withRetry(() => api.changes(id, 20, latestEtag)) : await api.changes(id, 20, latestEtag);
         if (cancelled) return;
         latestEtag = response.etag ?? latestEtag;
         if (response.data) setChanges(response.data);
@@ -68,7 +71,7 @@ export default function WatchlistPage() {
     // Recurring/background-triggered polls DO respect visibility — no
     // point spending requests on a tab nobody's looking at.
     const poll = async () => { if (document.visibilityState !== "hidden") await fetchChanges(); };
-    const begin = async () => { try { const list = await api.watchlist(id); if (!cancelled) setWatchlist(list); await fetchChanges(); api.watchlists().then(wl => { if (!cancelled) setAllWatchlists(wl); }).catch(() => {}); } catch (cause) { if (!cancelled) setError(cause); } };
+    const begin = async () => { try { const list = await withRetry(() => api.watchlist(id)); if (!cancelled) setWatchlist(list); await fetchChanges(true); api.watchlists().then(wl => { if (!cancelled) setAllWatchlists(wl); }).catch(() => {}); } catch (cause) { if (!cancelled) setError(cause); } };
     const visibility = () => { if (document.visibilityState === "visible") void poll(); };
     void begin();
     timer = setInterval(() => void poll(), 15_000);

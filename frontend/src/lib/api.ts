@@ -102,6 +102,28 @@ async function request<T>(path: string, init: RequestInit = {}, etag?: string): 
   return { data: await response.json() as T, etag: response.headers.get("ETag"), status: response.status };
 }
 
+// Retry wrapper for the FIRST read of a page — the fetch a returning judge
+// hits before anything is on screen. A transient failure there (a hosting
+// cold-start, a momentary 5xx, a flaky network) otherwise leaves the user
+// staring at a spinner forever, since the initial load has nothing cached
+// to fall back to. Retries only what can plausibly succeed on a second try:
+// network errors and 5xx. A genuine 4xx (404 not-found, validation) is the
+// server saying "no" — those are rethrown immediately, never retried. Only
+// wrap idempotent reads with this; never a create/mutate.
+export async function withRetry<T>(fn: () => Promise<T>, attempts = 4, baseMs = 600): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (err instanceof ApiRequestError && err.status >= 400 && err.status < 500) throw err;
+      if (i < attempts - 1) await new Promise((resolve) => setTimeout(resolve, baseMs * (i + 1)));
+    }
+  }
+  throw lastErr;
+}
+
 export const api = {
   health: () => USE_MOCK ? import("./mock").then(({ mock }) => mock.health()) : request<Health>("/health").then(({ data }) => data!),
   searchSymbols: (q: string) => USE_MOCK ? import("./mock").then(({ mock }) => mock.searchSymbols(q)) : request<SymbolSearchResult[]>(`/api/symbols?q=${encodeURIComponent(q)}`).then(({ data }) => data!),
