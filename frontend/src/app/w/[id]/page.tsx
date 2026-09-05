@@ -180,8 +180,8 @@ export default function WatchlistPage() {
       <div className="mx-auto max-w-7xl px-4 pt-3 pb-2">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
           {allWatchlists.map(wl => (
-            <Link 
-              key={wl.id} 
+            <Link
+              key={wl.id}
               href={`/w/${wl.id}`}
               className={`px-4 py-1.5 rounded-full text-[14px] font-medium transition-colors ${wl.id === id ? 'bg-[var(--accent)] text-white shadow-md shadow-[var(--accent)]/20' : 'bg-[var(--surface-2)] text-[var(--muted)] hover:text-[var(--ink)]'}`}
             >
@@ -195,6 +195,15 @@ export default function WatchlistPage() {
           >
             <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2.5v11M2.5 8h11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
             Watchlist
+          </button>
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new Event("pulse:start-tour"))}
+            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium text-[var(--amber)] transition-colors hover:opacity-80 ml-auto"
+            style={{ background: "rgba(230,160,60,.14)" }}
+          >
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5 3.5v9l7-4.5-7-4.5Z" fill="currentColor"/></svg>
+            Take the tour
           </button>
         </div>
       </div>
@@ -449,7 +458,7 @@ export default function WatchlistPage() {
         <InvestmentsCard items={changes!.items} id={id} />
         <MarketTrends items={changes!.items} />
 
-        <Link href={`/w/${id}/history`} className="rounded-2xl border border-[var(--line)] p-5 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] transition-colors flex items-center justify-between" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
+        <Link href={`/w/${id}/history`} data-tour="history-link" className="rounded-2xl border border-[var(--line)] p-5 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] transition-colors flex items-center justify-between" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
           View visit history <span>→</span>
         </Link>
 

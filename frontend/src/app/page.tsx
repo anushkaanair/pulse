@@ -131,9 +131,24 @@ export default function LandingPage() {
           Not another price table. Return later to a precise, ranked answer for what deserves your attention.
         </p>
         
-        <div className="mt-6 z-10 relative">
+        <div className="mt-6 z-10 relative flex flex-col items-center gap-3">
           <button onClick={() => router.push("/app")} className="bg-[#00B67A] text-white px-10 py-3 rounded-full font-bold text-[18px] hover:bg-[#00a36d] transition-colors shadow-lg shadow-[#00B67A]/25">
             Get started
+          </button>
+          {/* A brand-new watchlist is empty by construction — nothing has
+              "changed" yet because there's no baseline to compare against.
+              That's an honest first-visit state, but it's a bad first
+              impression for someone who didn't come here to build a
+              watchlist from scratch. This opens a pre-seeded demo account
+              (10 real Nifty names, already checkpointed) via the existing
+              ?as=<id> impersonation the /app redirector already supports —
+              no new backend mechanism, just a visible entry point to one
+              that already existed. */}
+          <button
+            onClick={() => router.push("/app?as=demo")}
+            className="text-[14px] font-medium text-[var(--muted)] underline underline-offset-4 decoration-[var(--line-2)] hover:text-[var(--ink)] hover:decoration-[var(--muted)] transition-colors"
+          >
+            Or explore a live demo watchlist →
           </button>
         </div>
 

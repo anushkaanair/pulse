@@ -38,6 +38,7 @@ export function Header() {
         </Link>
         <button
           onClick={toggle}
+          data-tour="theme-toggle"
           aria-label="Toggle light/dark theme"
           title="Toggle theme"
           className="ml-auto flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--line)] text-[var(--muted)] hover:text-[var(--ink)] hover:border-[var(--line-2)]"

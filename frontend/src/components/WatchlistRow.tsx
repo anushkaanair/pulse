@@ -87,7 +87,7 @@ export function WatchlistRow({
       {/* 4. Actions (Stale, Sensitivity, Remove) */}
       <div className="flex items-center justify-end gap-1.5 md:gap-2 md:w-[150px] flex-shrink-0">
         {item.quote ? <StaleBadge quote={item.quote} /> : null}
-        <div className="hidden md:flex rounded-lg overflow-hidden border border-[var(--line)] bg-[var(--ground-2)] text-[10px]">
+        <div data-tour="sensitivity" className="hidden md:flex rounded-lg overflow-hidden border border-[var(--line)] bg-[var(--ground-2)] text-[10px]">
           {(["quiet", "normal", "loud"] as Sensitivity[]).map((choice) => (
             <button
               key={choice}

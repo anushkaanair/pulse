@@ -148,7 +148,7 @@ export default function HistoryPage() {
                   </p>
                   
                   {/* Summary Cards */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                  <div data-tour="history-summary" className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
                      <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface-2)] p-4 flex flex-col justify-between">
                         <span className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">Top Performer</span>
                         {topPerformer ? (
@@ -184,7 +184,7 @@ export default function HistoryPage() {
                   </div>
 
                   {/* Filter Bar */}
-                  <div className="flex flex-nowrap items-end gap-3 mb-6 text-[12px] overflow-x-auto hide-scrollbar pb-2">
+                  <div data-tour="history-filters" className="flex flex-nowrap items-end gap-3 mb-6 text-[12px] overflow-x-auto hide-scrollbar pb-2">
                     <div className="flex flex-col gap-1.5 shrink-0">
                       <span className="font-semibold text-[var(--ink)] tracking-tight">Filter by Asset</span>
                       <select className="h-8 rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-2 outline-none font-medium text-[var(--muted)]" value={assetFilter} onChange={e => setAssetFilter(e.target.value)}>

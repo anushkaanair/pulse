@@ -21,11 +21,17 @@ export const config = {
 
   tickMs: num("TICK_MS", 1000),
   // quote_history retention. Trailing volatility only ever reads the most
-  // recent HISTORY_WINDOW rows per symbol, so anything older is dead weight
-  // that costs disk and slows every sweep over the table. Generous by
-  // default (a month is far more than the window needs, and leaves room for
-  // ad-hoc inspection); set to 0 to disable pruning entirely.
-  historyRetentionDays: num("HISTORY_RETENTION_DAYS", 30),
+  // recent HISTORY_WINDOW rows per symbol, and sparklines only the most
+  // recent ~30-200 rows per symbol (routes/sparklines.ts) — neither ever
+  // reads by time, only by row count, so nothing in this app benefits from
+  // more than a few minutes of retention. The previous 30-day default was
+  // exactly this: dead weight with no reader, and on a size-capped Postgres
+  // (e.g. Neon's free-tier 512 MB project limit) at ~1 tick/sec/symbol it
+  // silently filled the database and took every write down with it — a
+  // real production outage, not a hypothetical. 6 hours leaves generous
+  // headroom over both read paths plus room for ad-hoc inspection; set to
+  // 0 to disable pruning entirely (not recommended on a size-capped DB).
+  historyRetentionDays: num("HISTORY_RETENTION_DAYS", 0.25),
   historyPruneMs: num("HISTORY_PRUNE_MS", 3_600_000),
   simSeed: num("SIM_SEED", 42),
   // Fault injection (POST /api/_sim/faults) is unauthenticated by design —

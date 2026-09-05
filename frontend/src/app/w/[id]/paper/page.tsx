@@ -92,7 +92,7 @@ export default function PaperTradingPage() {
           <p className="mt-8 rounded-2xl border border-[var(--line)] p-6 text-sm text-[var(--muted)]" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>Nothing to show yet — add a stock to your watchlist to start a notional position.</p>
         ) : (
           <>
-            <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div data-tour="paper-summary" className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface-2)] p-4">
                 <span className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">Current</span>
                 <p className="numbers m-0 mt-2 text-[22px] font-semibold tracking-tight">{fmt(current)}</p>
@@ -115,7 +115,7 @@ export default function PaperTradingPage() {
               </div>
             </div>
 
-            <div className="mt-8 rounded-2xl border border-[var(--line)] overflow-hidden" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
+            <div data-tour="paper-table" className="mt-8 rounded-2xl border border-[var(--line)] overflow-hidden" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
               <div className="flex items-center px-4 py-3 border-b border-[var(--line)] bg-[var(--surface-2)]/50 text-xs font-medium text-[var(--muted)] uppercase tracking-wider">
                 <span className="flex-1">Stock</span>
                 <span className="w-24 text-right">1D</span>
