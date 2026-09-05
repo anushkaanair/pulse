@@ -1,5 +1,7 @@
 # Pulse
 
+**Live app: [pulse-groww.vercel.app](https://pulse-groww.vercel.app)**
+
 **Pulse** is a market watchlist that doesn't just show prices — it tells you
 exactly what **meaningfully changed** since you last looked, ranked by how
 unusual it is for that specific stock, over a feed that behaves like a real
@@ -10,6 +12,36 @@ Full reasoning: [`DECISIONS.md`](DECISIONS.md) (every non-obvious choice,
 including three bugs found and fixed by the test suite itself),
 [`RESILIENCE.md`](RESILIENCE.md) (failure modes and how the system degrades),
 and [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md) (the UI language).
+
+## Features
+
+- **Attention logic + Attention Deck** — every tick is scored for how
+  unusual it is for *that specific stock* (a z-score against its own
+  trailing volatility, sector-adjusted where available), scaled by how long
+  you've been away, and the top movers render as a ranked 3D card deck —
+  depth mirrors how much each move actually matters, not just a flat list
+  of everything that moved.
+- **Personalization** — every card you open is remembered and weighted into
+  future ranking; "Snooze for 24h" suppresses a symbol from the deck for a
+  day. Both are real per-user server-side state, not a client-side hide.
+- **Paper trading** — a notional ₹1,000-per-symbol basket over your
+  watchlist, priced off real live quotes (1D return, total return, vs-NIFTY
+  benchmark), with a per-stock breakdown page — never real money, never a
+  real broker.
+- **Live ticker** — prices move on their own from a fault-injecting market
+  simulator (real delay, out-of-order, duplicate, and corrected ticks), not
+  a static snapshot.
+- **Sensitivity (quiet / normal / loud)** — a per-symbol override on how
+  much movement counts as "meaningful" for that stock, so a naturally
+  volatile stock doesn't drown out a quiet one.
+- **History** — a plain diff between any two past visits (top/bottom
+  performer, average watchlist delta, per-stock % change), filterable and
+  sortable.
+- **Bulk editing** — paste a comma-separated list of symbols to replace an
+  entire watchlist in one save, with conflict resolution (keep mine / keep
+  theirs / merge) if it changed elsewhere in the meantime.
+- **Multiple watchlists** — create and switch between separate watchlists
+  from `/app`, each with its own baseline, history, and paper portfolio.
 
 ## Screenshots
 
