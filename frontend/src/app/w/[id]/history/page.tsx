@@ -92,13 +92,13 @@ export default function HistoryPage() {
       }
     });
 
-    return { 
-      topPerformer: maxPct !== -Infinity ? top : null, 
-      bottomPerformer: minPct !== Infinity ? bottom : null, 
+    return {
+      topPerformer: maxPct !== -Infinity ? top : null,
+      bottomPerformer: minPct !== Infinity ? bottom : null,
       avgDelta: count > 0 ? totalPct / count : 0,
       sortedItems: filteredItems
     };
-  }, [diff, sortConfig]);
+  }, [diff, sortConfig, searchQuery, perfFilter]);
 
   if (error) {
     const message = error instanceof ApiRequestError ? `${error.response.error} (${error.response.code})` : "Could not load history.";
