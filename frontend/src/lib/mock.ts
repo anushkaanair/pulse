@@ -1,6 +1,12 @@
 import { ApiRequestError, type ChangesPoll, type ChangesResponse, type ConflictResponse, type FaultConfig, type Health, type Quote, type Sensitivity, type Sparklines, type SymbolSearchResult, type TimelineDiffResponse, type TimelineResponse, type Watchlist, type WatchlistItem, type WatchlistSummary } from "./api";
 
-const now = "2026-09-04T11:42:13.000Z";
+// Anchored to real time AT MODULE LOAD, not a frozen historical date.
+// Found live: this used to be a hardcoded calendar timestamp, so every
+// "X ago" / "as of HH:MM" label across the app (the digest header, visit
+// history's "Compare right now vs:") silently drifted further from
+// reality every real day that passed since it was written, eventually
+// reading nonsensical things like "14h ago" on a page you just opened.
+const now = new Date().toISOString();
 const symbols: SymbolSearchResult[] = [
   { symbol: "TCS", name: "Tata Consultancy Services", exchange: "NSE" },
   { symbol: "SUZLON", name: "Suzlon Energy", exchange: "NSE" },
@@ -21,6 +27,10 @@ const item = (symbol: string, price: string, stale = false): WatchlistItem => ({
 // even though it was a real seeded stock the whole time.
 const seedPrices: Record<string, [string, boolean?]> = { TCS: ["3812.4500"], SUZLON: ["71.2000"], RELIANCE: ["2951.0000"], ZOMATO: ["241.3000"], IDEA: ["13.4500", true], HDFCBANK: ["1642.1000"] };
 const freshItem = (symbol: string): WatchlistItem => { const seeded = seedPrices[symbol]; return seeded ? item(symbol, seeded[0], seeded[1]) : item(symbol, "0.0000"); };
+// Same per-symbol move used in the digest chips (TCS down, SUZLON up on
+// volume, RELIANCE flat/corrected) — kept in one place so every screen
+// that touches "how much did this move" tells the same story.
+const demoPct: Record<string, string> = { TCS: "-3.09", SUZLON: "7.07", RELIANCE: "0.08" };
 // Every watchlist gets its OWN independent item array, keyed by id — a
 // mutation on one list (add/remove/sensitivity) must never touch another's
 // data. Found live: adding/removing a stock on "Long term" was silently
@@ -42,6 +52,10 @@ let lists: WatchlistSummary[] = [
 ];
 let faults: FaultConfig = {};
 let acknowledged = false;
+// Set to the real moment "Reset baseline" is actually clicked, so "Time
+// away" counts up honestly from then — not a canned number (previously
+// a flat 9000s/"2h30m" regardless of when you actually reset it).
+let checkpointAtMs: number | null = null;
 // The seeded "Market watch" represents a RETURNING user with unseen
 // changes (so the demo has something to show). A freshly created watchlist
 // is a genuine first visit — no baseline yet — and must mirror the real
@@ -81,7 +95,7 @@ function changesData(): ChangesResponse {
   const meaningful = acknowledged ? 0 : 3;
   return {
     snapshotId: "mock-snapshot-1",
-    baseline: { takenAt: acknowledged ? now : null, kind: acknowledged ? "checkpoint" : "first-visit", awaySeconds: acknowledged ? 9000 : null },
+    baseline: { takenAt: acknowledged && checkpointAtMs ? new Date(checkpointAtMs).toISOString() : null, kind: acknowledged ? "checkpoint" : "first-visit", awaySeconds: acknowledged && checkpointAtMs ? Math.max(0, Math.round((Date.now() - checkpointAtMs) / 1000)) : null },
     asOf: now, feed: { status: faults.outage ? "stale" : "live", lagSeconds: faults.outage ? 212 : 1 },
     digest: acknowledged ? "Nothing meaningful changed since you last looked." : "Since 2 hours ago: 3 things worth a look — TCS −3.09%, SUZLON on heavy volume, RELIANCE price corrected.",
     summary: { meaningful, total: current.items.length, stale: current.items.filter((entry) => entry.stale).length, newSinceLast: 0 },
@@ -189,7 +203,7 @@ export const mock = {
     }
     return etag === "mock-snapshot-1" ? { data: null, etag, notModified: true } : { data: changesData(), etag: "mock-snapshot-1", notModified: false };
   },
-  checkpoint: async (_id: string, _snapshotId: string) => { acknowledged = true; firstVisit = false; return { takenAt: now }; },
+  checkpoint: async (_id: string, _snapshotId: string) => { acknowledged = true; firstVisit = false; checkpointAtMs = Date.now(); return { takenAt: new Date(checkpointAtMs).toISOString() }; },
   // The real backend always has a NIFTY row (the market-index proxy every
   // symbol's beta is measured against); no single list's items reliably
   // includes it, so it's synthesized here rather than left to render as a
@@ -231,14 +245,22 @@ export const mock = {
     return {
       takenAt: snapshotId === "mock-visit-1" ? new Date(Date.parse(now) - 2 * 3600_000).toISOString() : now,
       comparedTo: snapshotId === "mock-visit-1" ? null : new Date(Date.parse(now) - 2 * 3600_000).toISOString(),
-      items: items.map((entry, i) => ({
-        symbol: entry.symbol,
-        name: entry.name,
-        priceBefore: entry.quote ? (Number(entry.quote.price) * 0.98).toFixed(4) : null,
-        priceAfter: entry.quote?.price ?? null,
-        pct: entry.quote ? "2.00" : null,
-        status: i === items.length - 1 ? "added" : "tracked",
-      })),
+      items: items.map((entry, i) => {
+        // Every symbol used to get the same flat "2.00" here, so "Top
+        // performer" and "Bottom performer" always tied on whichever item
+        // happened to be first — found live. Reuses the same per-symbol
+        // story as the main digest (TCS down, SUZLON up) so the two
+        // screens agree with each other instead of contradicting.
+        const pct = entry.quote ? (demoPct[entry.symbol] ?? "0.13") : null;
+        return {
+          symbol: entry.symbol,
+          name: entry.name,
+          priceBefore: entry.quote && pct ? (Number(entry.quote.price) / (1 + Number(pct) / 100)).toFixed(4) : null,
+          priceAfter: entry.quote?.price ?? null,
+          pct,
+          status: i === items.length - 1 ? "added" : "tracked",
+        };
+      }),
     };
   },
 };
