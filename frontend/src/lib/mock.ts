@@ -11,15 +11,23 @@ const symbols: SymbolSearchResult[] = [
 ];
 const quote = (symbol: string, price: string, stale = false): Quote => ({ symbol, price, prevClose: price, dayHigh: price, dayLow: price, weekHigh: (Number(price) * 1.3).toFixed(4), weekLow: (Number(price) * 0.75).toFixed(4), volume: 1234000, asOf: now, receivedAt: now, ageSeconds: stale ? 212 : 1, stale, corrected: false, source: "simulated" });
 const item = (symbol: string, price: string, stale = false): WatchlistItem => ({ symbol, name: symbols.find((entry) => entry.symbol === symbol)?.name ?? symbol, sensitivity: "normal", quote: quote(symbol, price, stale), stale });
-let current: Watchlist = { id: "demo-watchlist", name: "Market watch", version: 1, items: [item("TCS", "3812.4500"), item("SUZLON", "71.2000"), item("RELIANCE", "2951.0000"), item("ZOMATO", "241.3000"), item("IDEA", "13.4500", true), item("HDFCBANK", "1642.1000")] };
-// The /app selector page needs several lists (rename/archive/delete,
-// duplicate-name rejection, the "N of M worth a look" summary) — only
-// `current` gets the rich per-item demo payload above; the others are
-// realistic decoys (one empty, matching the real "three empty duplicate
-// lists" bug this was built to fix) so the list-level features have
-// something real to operate on without a full multi-watchlist mock engine.
+// Every watchlist gets its OWN independent item array, keyed by id — a
+// mutation on one list (add/remove/sensitivity) must never touch another's
+// data. Found live: adding/removing a stock on "Long term" was silently
+// reading and writing "Market watch"'s items instead, because everything
+// used to funnel through a single shared `current` variable regardless of
+// which id was actually passed in.
+const DEMO_ID = "demo-watchlist";
+let store: Record<string, Watchlist> = {
+  [DEMO_ID]: { id: DEMO_ID, name: "Market watch", version: 1, items: [item("TCS", "3812.4500"), item("SUZLON", "71.2000"), item("RELIANCE", "2951.0000"), item("ZOMATO", "241.3000"), item("IDEA", "13.4500", true), item("HDFCBANK", "1642.1000")] },
+  // A realistic decoy (empty, matching the real "three empty duplicate
+  // lists" bug this was built to fix) — only the demo list gets the
+  // hardcoded rich digest content below; every other list is a genuine,
+  // independently-editable empty watchlist.
+  "mock-empty-list": { id: "mock-empty-list", name: "Long term", version: 1, items: [] },
+};
 let lists: WatchlistSummary[] = [
-  { id: current.id, name: current.name, version: current.version, itemCount: current.items.length, updatedAt: now, createdAt: new Date(Date.parse(now) - 7 * 86_400_000).toISOString(), archivedAt: null },
+  { id: DEMO_ID, name: store[DEMO_ID].name, version: store[DEMO_ID].version, itemCount: store[DEMO_ID].items.length, updatedAt: now, createdAt: new Date(Date.parse(now) - 7 * 86_400_000).toISOString(), archivedAt: null },
   { id: "mock-empty-list", name: "Long term", version: 1, itemCount: 0, updatedAt: now, createdAt: new Date(Date.parse(now) - 2 * 86_400_000).toISOString(), archivedAt: null },
 ];
 let faults: FaultConfig = {};
@@ -31,6 +39,7 @@ let acknowledged = false;
 let firstVisit = false;
 
 function changesData(): ChangesResponse {
+  const current = store[DEMO_ID];
   if (firstVisit) {
     return {
       snapshotId: "mock-snapshot-first",
@@ -82,12 +91,9 @@ export const mock = {
       throw new ApiRequestError({ error: "You already have a watchlist with this name.", code: "DUPLICATE_NAME" }, 409);
     }
     const id = crypto.randomUUID();
+    store[id] = { id, name: trimmed, version: 1, items: [] };
     lists = [...lists, { id, name: trimmed, version: 1, itemCount: 0, updatedAt: now, createdAt: now, archivedAt: null }];
-    // Becomes the new "active" detail-page watchlist — see the module
-    // comment above on why only one list at a time gets rich item data.
-    current = { id, name: trimmed, version: 1, items: [] };
-    acknowledged = false; firstVisit = true;
-    return current;
+    return store[id];
   },
   watchlists: async (includeArchived = false): Promise<WatchlistSummary[]> => lists.filter((l) => includeArchived || !l.archivedAt),
   patchWatchlist: async (id: string, patch: { name?: string; archived?: boolean }): Promise<WatchlistSummary> => {
@@ -99,44 +105,75 @@ export const mock = {
         throw new ApiRequestError({ error: "You already have a watchlist with this name.", code: "DUPLICATE_NAME" }, 409);
       }
       target.name = trimmed;
-      if (id === current.id) current = { ...current, name: trimmed };
+      if (store[id]) store[id] = { ...store[id], name: trimmed };
     }
     if (patch.archived !== undefined) target.archivedAt = patch.archived ? new Date().toISOString() : null;
     lists = [...lists];
     return target;
   },
-  deleteWatchlist: async (id: string): Promise<void> => { lists = lists.filter((l) => l.id !== id); },
-  // Any OTHER known list (the seeded empty decoy, or one created via the
-  // "+ Watchlist" modal) is a real, empty Watchlist — not an error. Only
-  // `current` carries the rich demo payload; everything else in `lists`
-  // still needs to open cleanly with zero items, the same as a real
-  // freshly-created list would. Found live: clicking "Long term" (the
-  // seeded second list) hit the `throw` below and rendered as a hard
-  // "Could not load this watchlist" error instead of an empty state.
+  deleteWatchlist: async (id: string): Promise<void> => { lists = lists.filter((l) => l.id !== id); delete store[id]; },
+  // Every known list — seeded or created via "+ Watchlist" — has its own
+  // real entry in `store`, so this just looks it up directly. Found live:
+  // clicking "Long term" (the seeded second list) used to hit the `throw`
+  // below and render as a hard "Could not load this watchlist" error
+  // instead of its own (empty) state.
   watchlist: async (id: string) => {
-    if (id === current.id) return current;
-    const known = lists.find((l) => l.id === id);
-    if (!known) throw new Error("Watchlist not found");
-    return { id: known.id, name: known.name, version: known.version, items: [] };
+    const found = store[id];
+    if (!found) throw new Error("Watchlist not found");
+    return found;
   },
-  setSensitivity: async (id: string, symbol: string, sensitivity: Sensitivity) => { await mock.watchlist(id); current = { ...current, version: current.version + 1, items: current.items.map((entry) => entry.symbol === symbol ? { ...entry, sensitivity } : entry) }; return current; },
-  addItem: async (id: string, symbol: string) => { await mock.watchlist(id); if (!symbols.some((entry) => entry.symbol === symbol)) throw new Error("Unknown symbol"); if (!current.items.some((entry) => entry.symbol === symbol)) current = { ...current, version: current.version + 1, items: [...current.items, item(symbol, "0.0000")] }; return current; },
-  removeItem: async (id: string, symbol: string) => { await mock.watchlist(id); current = { ...current, version: current.version + 1, items: current.items.filter((entry) => entry.symbol !== symbol) }; return current; },
-  replaceItems: async (id: string, requested: string[], version: number) => { await mock.watchlist(id); if (version !== current.version) { const response: ConflictResponse = { error: "Watchlist version conflict", code: "VERSION_CONFLICT", current: { version: current.version, items: current.items } }; throw new ApiRequestError(response, 409); } current = { ...current, version: current.version + 1, items: requested.map((symbol) => current.items.find((entry) => entry.symbol === symbol) ?? item(symbol, "0.0000")) }; return current; },
+  setSensitivity: async (id: string, symbol: string, sensitivity: Sensitivity) => {
+    const target = await mock.watchlist(id);
+    const updated = { ...target, version: target.version + 1, items: target.items.map((entry) => entry.symbol === symbol ? { ...entry, sensitivity } : entry) };
+    store[id] = updated;
+    return updated;
+  },
+  addItem: async (id: string, symbol: string) => {
+    const target = await mock.watchlist(id);
+    if (!symbols.some((entry) => entry.symbol === symbol)) throw new Error("Unknown symbol");
+    if (target.items.some((entry) => entry.symbol === symbol)) return target;
+    const updated = { ...target, version: target.version + 1, items: [...target.items, item(symbol, "0.0000")] };
+    store[id] = updated;
+    lists = lists.map((l) => l.id === id ? { ...l, version: updated.version, itemCount: updated.items.length, updatedAt: now } : l);
+    return updated;
+  },
+  removeItem: async (id: string, symbol: string) => {
+    const target = await mock.watchlist(id);
+    const updated = { ...target, version: target.version + 1, items: target.items.filter((entry) => entry.symbol !== symbol) };
+    store[id] = updated;
+    lists = lists.map((l) => l.id === id ? { ...l, version: updated.version, itemCount: updated.items.length, updatedAt: now } : l);
+    return updated;
+  },
+  replaceItems: async (id: string, requested: string[], version: number) => {
+    const target = await mock.watchlist(id);
+    if (version !== target.version) {
+      const response: ConflictResponse = { error: "Watchlist version conflict", code: "VERSION_CONFLICT", current: { version: target.version, items: target.items } };
+      throw new ApiRequestError(response, 409);
+    }
+    const updated = { ...target, version: target.version + 1, items: requested.map((symbol) => target.items.find((entry) => entry.symbol === symbol) ?? item(symbol, "0.0000")) };
+    store[id] = updated;
+    lists = lists.map((l) => l.id === id ? { ...l, version: updated.version, itemCount: updated.items.length, updatedAt: now } : l);
+    return updated;
+  },
   changes: async (id: string, _limit: number, etag?: string): Promise<ChangesPoll> => {
-    // Any list other than the "active" one (see module comment) is a
-    // realistic empty decoy, not a fully-simulated watchlist — real,
-    // honest "nothing meaningful" rather than reusing `current`'s payload
-    // under a different id.
-    if (id !== current.id) {
+    // Only the seeded demo list gets the hardcoded rich digest below —
+    // every other list (including ones you create) is real but honest:
+    // whatever's actually in its own `store` entry, "nothing meaningful"
+    // until it has history to compare against.
+    if (id !== DEMO_ID) {
       const list = lists.find((l) => l.id === id);
+      const items = store[id]?.items ?? [];
       return {
         data: {
           snapshotId: `mock-snapshot-${id}`, baseline: { takenAt: null, kind: "first-visit", awaySeconds: null },
           asOf: now, feed: { status: "live", lagSeconds: 1 },
           digest: "First look — this is your baseline. Come back later and this line will tell you what changed.",
-          summary: { meaningful: 0, total: list?.itemCount ?? 0, stale: 0, newSinceLast: 0 },
-          attentionBudget: 5, topMover: null, retractions: [], items: [],
+          summary: { meaningful: 0, total: list?.itemCount ?? items.length, stale: 0, newSinceLast: 0 },
+          attentionBudget: 5, topMover: null, retractions: [],
+          items: items.map((entry) => ({
+            ...entry, quote: entry.quote ?? quote(entry.symbol, "0"),
+            change: { kind: "none", pctSincePrev: null, zScore: null, zRaw: null, events: [], confidence: "high", attention: 0, sensitivity: entry.sensitivity, why: "First look — this is your baseline.", sectorAdjusted: false },
+          })),
         }, etag: `mock-snapshot-${id}`, notModified: false,
       };
     }
@@ -144,15 +181,20 @@ export const mock = {
   },
   checkpoint: async (_id: string, _snapshotId: string) => { acknowledged = true; firstVisit = false; return { takenAt: now }; },
   // The real backend always has a NIFTY row (the market-index proxy every
-  // symbol's beta is measured against); the mock's `current.items` never
+  // symbol's beta is measured against); no single list's items reliably
   // includes it, so it's synthesized here rather than left to render as a
-  // dash in the market rail.
-  quotes: async (requested: string[]) => [...current.items, item("NIFTY", "22150.4000")]
-    .filter((entry) => requested.includes(entry.symbol)).flatMap((entry) => entry.quote ? [entry.quote] : []),
+  // dash in the market rail. Quotes are looked up across every list's own
+  // store entry so a symbol added to ANY watchlist resolves correctly.
+  quotes: async (requested: string[]) => {
+    const merged = new Map<string, WatchlistItem>();
+    for (const w of Object.values(store)) for (const entry of w.items) merged.set(entry.symbol, entry);
+    merged.set("NIFTY", item("NIFTY", "22150.4000"));
+    return [...merged.values()].filter((entry) => requested.includes(entry.symbol)).flatMap((entry) => entry.quote ? [entry.quote] : []);
+  },
   setFaults: async (config: FaultConfig) => { faults = { ...faults, ...config }; return { active: faults }; },
-  sparklines: async (_id: string, limit: number): Promise<Sparklines> => {
+  sparklines: async (id: string, limit: number): Promise<Sparklines> => {
     const out: Sparklines = {};
-    for (const entry of current.items) {
+    for (const entry of store[id]?.items ?? []) {
       if (!entry.quote) continue;
       const base = Number(entry.quote.price);
       // Deterministic little wiggle so the shape looks organic without a real feed.
@@ -173,19 +215,22 @@ export const mock = {
   // concurrent edit from "another device" deterministically, within one
   // page lifetime — the mock has no server, so there's no other way to
   // create a real version conflict for the conflict-modal test to exercise.
-  __simulateConcurrentEdit: async (symbols: string[]) => { await mock.replaceItems(current.id, symbols, current.version); },
-  timelineDiff: async (_id: string, snapshotId: string, _against?: string): Promise<TimelineDiffResponse> => ({
-    takenAt: snapshotId === "mock-visit-1" ? new Date(Date.parse(now) - 2 * 3600_000).toISOString() : now,
-    comparedTo: snapshotId === "mock-visit-1" ? null : new Date(Date.parse(now) - 2 * 3600_000).toISOString(),
-    items: current.items.map((entry, i) => ({
-      symbol: entry.symbol,
-      name: entry.name,
-      priceBefore: entry.quote ? (Number(entry.quote.price) * 0.98).toFixed(4) : null,
-      priceAfter: entry.quote?.price ?? null,
-      pct: entry.quote ? "2.00" : null,
-      status: i === current.items.length - 1 ? "added" : "tracked",
-    })),
-  }),
+  __simulateConcurrentEdit: async (symbols: string[]) => { await mock.replaceItems(DEMO_ID, symbols, store[DEMO_ID].version); },
+  timelineDiff: async (id: string, snapshotId: string, _against?: string): Promise<TimelineDiffResponse> => {
+    const items = store[id]?.items ?? [];
+    return {
+      takenAt: snapshotId === "mock-visit-1" ? new Date(Date.parse(now) - 2 * 3600_000).toISOString() : now,
+      comparedTo: snapshotId === "mock-visit-1" ? null : new Date(Date.parse(now) - 2 * 3600_000).toISOString(),
+      items: items.map((entry, i) => ({
+        symbol: entry.symbol,
+        name: entry.name,
+        priceBefore: entry.quote ? (Number(entry.quote.price) * 0.98).toFixed(4) : null,
+        priceAfter: entry.quote?.price ?? null,
+        pct: entry.quote ? "2.00" : null,
+        status: i === items.length - 1 ? "added" : "tracked",
+      })),
+    };
+  },
 };
 
 // Test-only hook, dev/e2e builds only — this module is never imported when
