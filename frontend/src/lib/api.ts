@@ -65,7 +65,7 @@ export interface TimelineResponse { visits: TimelineVisit[] }
 export interface TimelineDiffItem { symbol: string; name: string; priceBefore: string | null; priceAfter: string | null; pct: string | null; status: "tracked" | "added" | "removed" }
 export interface TimelineDiffResponse { takenAt: string; comparedTo: string | null; items: TimelineDiffItem[] }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
 const USER_KEY = "market-watchlist-user-id";
 
