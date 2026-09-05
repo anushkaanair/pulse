@@ -11,6 +11,16 @@ const symbols: SymbolSearchResult[] = [
 ];
 const quote = (symbol: string, price: string, stale = false): Quote => ({ symbol, price, prevClose: price, dayHigh: price, dayLow: price, weekHigh: (Number(price) * 1.3).toFixed(4), weekLow: (Number(price) * 0.75).toFixed(4), volume: 1234000, asOf: now, receivedAt: now, ageSeconds: stale ? 212 : 1, stale, corrected: false, source: "simulated" });
 const item = (symbol: string, price: string, stale = false): WatchlistItem => ({ symbol, name: symbols.find((entry) => entry.symbol === symbol)?.name ?? symbol, sensitivity: "normal", quote: quote(symbol, price, stale), stale });
+// Known seed prices for the six scripted demo symbols. A genuinely new
+// symbol has no real price to fall back to (0.0000 placeholder is honest
+// there), but re-adding a known one — after removing it, or after a
+// conflict-resolution rebuilds a list from scratch — should restore its
+// real price, not reset it to ₹0.00. Found live: resolving a version
+// conflict with "Keep mine" rebuilt every item via `freshItem`, and any
+// symbol not present in the OTHER version's items came back at ₹0.00
+// even though it was a real seeded stock the whole time.
+const seedPrices: Record<string, [string, boolean?]> = { TCS: ["3812.4500"], SUZLON: ["71.2000"], RELIANCE: ["2951.0000"], ZOMATO: ["241.3000"], IDEA: ["13.4500", true], HDFCBANK: ["1642.1000"] };
+const freshItem = (symbol: string): WatchlistItem => { const seeded = seedPrices[symbol]; return seeded ? item(symbol, seeded[0], seeded[1]) : item(symbol, "0.0000"); };
 // Every watchlist gets its OWN independent item array, keyed by id — a
 // mutation on one list (add/remove/sensitivity) must never touch another's
 // data. Found live: adding/removing a stock on "Long term" was silently
@@ -19,7 +29,7 @@ const item = (symbol: string, price: string, stale = false): WatchlistItem => ({
 // which id was actually passed in.
 const DEMO_ID = "demo-watchlist";
 let store: Record<string, Watchlist> = {
-  [DEMO_ID]: { id: DEMO_ID, name: "Market watch", version: 1, items: [item("TCS", "3812.4500"), item("SUZLON", "71.2000"), item("RELIANCE", "2951.0000"), item("ZOMATO", "241.3000"), item("IDEA", "13.4500", true), item("HDFCBANK", "1642.1000")] },
+  [DEMO_ID]: { id: DEMO_ID, name: "Market watch", version: 1, items: Object.keys(seedPrices).map(freshItem) },
   // A realistic decoy (empty, matching the real "three empty duplicate
   // lists" bug this was built to fix) — only the demo list gets the
   // hardcoded rich digest content below; every other list is a genuine,
@@ -132,7 +142,7 @@ export const mock = {
     const target = await mock.watchlist(id);
     if (!symbols.some((entry) => entry.symbol === symbol)) throw new Error("Unknown symbol");
     if (target.items.some((entry) => entry.symbol === symbol)) return target;
-    const updated = { ...target, version: target.version + 1, items: [...target.items, item(symbol, "0.0000")] };
+    const updated = { ...target, version: target.version + 1, items: [...target.items, freshItem(symbol)] };
     store[id] = updated;
     lists = lists.map((l) => l.id === id ? { ...l, version: updated.version, itemCount: updated.items.length, updatedAt: now } : l);
     return updated;
@@ -150,7 +160,7 @@ export const mock = {
       const response: ConflictResponse = { error: "Watchlist version conflict", code: "VERSION_CONFLICT", current: { version: target.version, items: target.items } };
       throw new ApiRequestError(response, 409);
     }
-    const updated = { ...target, version: target.version + 1, items: requested.map((symbol) => target.items.find((entry) => entry.symbol === symbol) ?? item(symbol, "0.0000")) };
+    const updated = { ...target, version: target.version + 1, items: requested.map((symbol) => target.items.find((entry) => entry.symbol === symbol) ?? freshItem(symbol)) };
     store[id] = updated;
     lists = lists.map((l) => l.id === id ? { ...l, version: updated.version, itemCount: updated.items.length, updatedAt: now } : l);
     return updated;
