@@ -3,16 +3,16 @@
 import { useState } from "react";
 
 const STEPS = [
-  { title: "Homepage", text: "This is Pulse — no login, one button." },
-  { title: "Get started", text: "Straight into your watchlist. No setup screen." },
-  { title: "Market rail", text: "Live NIFTY + your tracked stocks — nothing here is a static mockup." },
-  { title: "Attention deck", text: "This card stack is ranked, not sorted — closest to you deserves the most attention." },
-  { title: "Compact cards", text: "Compact by default. Click to open the why." },
-  { title: "Expanded card", text: "Plain language first, the σ math is one tap away for anyone who wants it." },
-  { title: "All tracked stocks", text: "Every stock, always visible — the deck triages, it doesn't hide." },
-  { title: "Stale badge", text: "If data's late, it says so. It never pretends to be fresh." },
-  { title: "Investments card", text: "Paper trading, clearly marked — real prices, zero real money." },
-  { title: "/dev/faults", text: "And this — I can break my own feed live, on demand, to prove the honesty claim." },
+  { title: "Homepage", text: "This is Pulse — no login, one button.", pos: "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" },
+  { title: "Get started", text: "Straight into your watchlist. No setup screen.", pos: "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" },
+  { title: "Market rail", text: "Live NIFTY + your tracked stocks — nothing here is a static mockup.", pos: "top-[140px] left-[10%]" },
+  { title: "Attention deck", text: "This card stack is ranked, not sorted — closest to you deserves the most attention.", pos: "top-[300px] left-[50%] sm:left-[60%] max-sm:-translate-x-1/2" },
+  { title: "Compact cards", text: "Compact by default. Click to open the why.", pos: "top-[300px] left-[50%] sm:left-[60%] max-sm:-translate-x-1/2" },
+  { title: "Expanded card", text: "Plain language first, the σ math is one tap away for anyone who wants it.", pos: "top-[300px] left-[50%] sm:left-[60%] max-sm:-translate-x-1/2" },
+  { title: "All tracked stocks", text: "Every stock, always visible — the deck triages, it doesn't hide.", pos: "bottom-[15%] left-[10%] sm:left-[25%]" },
+  { title: "Stale badge", text: "If data's late, it says so. It never pretends to be fresh.", pos: "bottom-[15%] left-[10%] sm:left-[25%]" },
+  { title: "Investments card", text: "Paper trading, clearly marked — real prices, zero real money.", pos: "top-[350px] right-[10%] sm:right-[380px]" },
+  { title: "Sort/Filter bar", text: "No nested menus. One line handles every view you need.", pos: "bottom-[35%] left-[10%] sm:left-[25%]" },
 ];
 
 export function DemoTutorial() {
@@ -31,7 +31,7 @@ export function DemoTutorial() {
   }
 
   return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 w-full max-w-[360px]">
+    <div className={`fixed z-50 flex flex-col gap-2 w-full max-w-[360px] transition-all duration-500 ease-in-out ${STEPS[step].pos}`}>
       <div className="bg-[var(--surface)] border border-[var(--line)] shadow-[0_12px_40px_rgb(0,0,0,0.12)] rounded-2xl overflow-hidden backdrop-blur-xl">
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--line)] bg-[var(--surface-2)]">
           <span className="text-[11px] font-bold tracking-wider text-[var(--muted)] uppercase">Demo Script • Step {step + 1} of {STEPS.length}</span>
