@@ -1,0 +1,28 @@
+# Fly.io app config for the Pulse backend.
+#
+# min_machines_running = 1 and auto_stop_machines = "off" are the two
+# settings that actually matter here: without them, Fly's default
+# behaviour stops idle machines and cold-starts them on the next request —
+# exactly the hibernation risk this whole deploy exists to eliminate.
+app = "pulse-backend"
+primary_region = "bom"  # Mumbai — closest to the simulated NSE market data
+
+[build]
+
+[http_service]
+  internal_port = 4000
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[http_service.checks]]
+  interval = "15s"
+  timeout = "5s"
+  grace_period = "10s"
+  method = "GET"
+  path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
