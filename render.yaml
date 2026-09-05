@@ -1,0 +1,41 @@
+# Render Blueprint — provisions the Pulse backend + its Postgres in one click.
+# In the Render dashboard: New → Blueprint → connect this repo → Apply.
+# Everything below is created automatically; no manual env entry needed.
+#
+# Notes:
+# - The backend is a long-running Express process with a stateful market
+#   ingestor (a setInterval polling loop) — a persistent web service, NOT
+#   serverless. That's why it lives here and not on Vercel.
+# - Render sets NODE_ENV=production, which makes `npm install` skip
+#   devDependencies — but `typescript`/`tsc` live there, so the build must
+#   force-include them (`--include=dev`) or the build fails.
+# - DATABASE_URL is wired from the managed Postgres below (internal URL, no
+#   SSL config needed). Migrations run automatically on boot (index.ts).
+# - SIM_ADMIN=true intentionally exposes POST /api/_sim/faults so the live
+#   "force an outage" demo works. It's a demo control surface, not user data.
+databases:
+  - name: pulse-db
+    plan: free
+    databaseName: watchlist
+    user: pulse
+
+services:
+  - type: web
+    name: pulse-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pulse-db
+          property: connectionString
+      - key: SIM_ADMIN
+        value: "true"
+      - key: CORS_ORIGINS
+        value: https://pulse-groww.vercel.app
