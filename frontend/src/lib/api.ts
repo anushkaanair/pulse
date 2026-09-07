@@ -37,6 +37,11 @@ export interface ChangeItem {
     // symbol's own trailing average. The baseline a raw volume number needs
     // to actually mean something.
     volumeRatio?: number;
+    // Personalization (see backend changes/personalization.ts): set only
+    // while a user-initiated snooze on this symbol is still active — the
+    // card was suppressed from the ranked deck specifically because of
+    // this, not because the move wasn't real.
+    snoozedUntil?: string | null;
   };
 }
 export interface Retraction { symbol: string; name: string; previousZ: number | null }
@@ -155,6 +160,17 @@ export const api = {
   // the server replays the first result instead of racing itself — see
   // routes/checkpoint.ts.
   checkpoint: (id: string, snapshotId: string) => USE_MOCK ? import("./mock").then(({ mock }) => mock.checkpoint(id, snapshotId)) : request<{ takenAt: string }>(`/api/watchlists/${id}/checkpoint`, { method: "POST", body: JSON.stringify({ snapshotId }), headers: { "Idempotency-Key": crypto.randomUUID() } }).then(({ data }) => data!),
+  // Fire-and-forget: the ranking learns what you actually open, not just
+  // what was shown. Never awaited by the caller for its result — a failed
+  // write here should not block or error the UI action that triggered it.
+  // The response is 204 No Content, same reason deleteWatchlist above
+  // bypasses the shared request() helper (which always calls .json()).
+  recordOpen: async (symbol: string): Promise<void> => {
+    if (USE_MOCK) { const { mock } = await import("./mock"); return mock.recordOpen(symbol); }
+    const res = await fetch(`${API_URL}/api/attention/${encodeURIComponent(symbol)}/open`, { method: "POST", headers: { "X-User-Id": userId() } });
+    if (!res.ok) throw new ApiRequestError(await res.json() as ApiError, res.status);
+  },
+  snooze: (symbol: string, hours = 24) => USE_MOCK ? import("./mock").then(({ mock }) => mock.snooze(symbol, hours)) : request<{ snoozedUntil: string }>(`/api/attention/${encodeURIComponent(symbol)}/snooze`, { method: "POST", body: JSON.stringify({ hours }) }).then(({ data }) => data!),
   quotes: (symbols: string[]) => USE_MOCK ? import("./mock").then(({ mock }) => mock.quotes(symbols)) : request<Quote[]>(`/api/quotes?symbols=${encodeURIComponent(symbols.join(","))}`).then(({ data }) => data!),
   setFaults: (config: FaultConfig) => USE_MOCK ? import("./mock").then(({ mock }) => mock.setFaults(config)) : request<{ active: FaultConfig }>("/api/_sim/faults", { method: "POST", body: JSON.stringify(config) }).then(({ data }) => data!),
   sparklines: (id: string, limit = 30) => USE_MOCK ? import("./mock").then(({ mock }) => mock.sparklines(id, limit)) : request<Sparklines>(`/api/watchlists/${id}/sparklines?limit=${limit}`).then(({ data }) => data!),

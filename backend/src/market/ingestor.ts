@@ -112,6 +112,17 @@ export class Ingestor {
       this.stats.errors++;
       logger.warn({ err }, "history prune failed; will retry");
     }
+    // Attention personalization's two tables (see changes/personalization.ts):
+    // orders of magnitude smaller than quote_history, so a plain unbounded
+    // DELETE (no batching) is fine — piggybacks on the same tick rather than
+    // running its own timer. An open past the 30-day read window is dead
+    // weight; an expired snooze already has zero effect, only its row lingers.
+    try {
+      await this.pool.query("DELETE FROM attention_opens WHERE opened_at < now() - interval '30 days'");
+      await this.pool.query("DELETE FROM attention_snoozes WHERE snoozed_until < now() - interval '1 day'");
+    } catch (err) {
+      logger.warn({ err }, "attention memory prune failed; will retry");
+    }
     return deleted;
   }
 
