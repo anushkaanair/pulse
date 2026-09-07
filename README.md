@@ -11,6 +11,24 @@ including three bugs found and fixed by the test suite itself),
 [`RESILIENCE.md`](RESILIENCE.md) (failure modes and how the system degrades),
 and [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md) (the UI language).
 
+## Screenshots
+
+*Live captures from the deployed app, running against the real backend
+(real Postgres, real simulated feed) — not mocked.*
+
+**Home** — same visual language as Groww on purpose; a live ticker, not a
+screenshot.
+![Homepage](docs/screenshots/homepage.png)
+
+**Watchlist** — the ranked attention deck ("3 worth a look"), the full
+tracked-stock list, and the live paper portfolio.
+![Watchlist](docs/screenshots/watchlist.png)
+
+**Personalization** — every card opened is remembered and weighted into
+future ranking; "Snooze for 24h" suppresses a symbol from the deck for a
+day, a real per-user suppression, not a client-side hide.
+![Personalization](docs/screenshots/personalization.png)
+
 ## Quick start
 
 Requires Node 20+, Docker, npm.
