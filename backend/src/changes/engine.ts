@@ -86,6 +86,12 @@ export interface Change {
   // baseline the engine itself already used to decide "spike" — surfaced,
   // not just acted on internally.
   volumeRatio?: number;
+  // Personalization (see changes/personalization.ts): set only while a
+  // user-initiated snooze on this symbol is still active. The engine
+  // itself never sets this — it's pure and has no notion of one user's
+  // history — routes/changes.ts fills it in as a post-processing step,
+  // the same way quietForMs is.
+  snoozedUntil?: string | null;
 }
 
 export interface EngineResult {
@@ -122,15 +128,7 @@ export function computeChanges(
     name: item.name,
     change: changeFor(item, snapshot?.[item.symbol] ?? null, snapshot !== null, elapsedMs, stats.get(item.symbol), cfg, indexReturn),
   }));
-  // Rank: what deserves attention first; "none" always last, ties by symbol
-  // so the order is stable between polls (no UI jitter).
-  return results.sort((a, b) => {
-    const an = a.change.kind === "none" ? 1 : 0;
-    const bn = b.change.kind === "none" ? 1 : 0;
-    if (an !== bn) return an - bn;
-    if (b.change.attention !== a.change.attention) return b.change.attention - a.change.attention;
-    return a.symbol.localeCompare(b.symbol);
-  });
+  return rankResults(results);
 }
 
 function changeFor(
@@ -373,6 +371,20 @@ function signed(pct: number) {
   return `${pct >= 0 ? "+" : "-"}${Math.abs(pct).toFixed(2)}`;
 }
 
-function round2(n: number) {
+export function round2(n: number) {
   return Math.round(n * 100) / 100;
+}
+
+// What deserves attention first; "none" always last, ties by symbol so the
+// order is stable between polls (no UI jitter). Exported so
+// changes/personalization.ts can re-rank after adjusting attention scores
+// (a snooze or an open-history boost) without duplicating the comparator.
+export function rankResults(results: EngineResult[]): EngineResult[] {
+  return [...results].sort((a, b) => {
+    const an = a.change.kind === "none" ? 1 : 0;
+    const bn = b.change.kind === "none" ? 1 : 0;
+    if (an !== bn) return an - bn;
+    if (b.change.attention !== a.change.attention) return b.change.attention - a.change.attention;
+    return a.symbol.localeCompare(b.symbol);
+  });
 }

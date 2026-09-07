@@ -90,6 +90,13 @@ export default function WatchlistPage() {
   }, [id]);
   const refreshWatchlist = async (work: () => Promise<Watchlist>) => { try { setWatchlist(await work()); } catch (cause) { setError(cause); } };
   const markSeen = async () => { if (!changes) return; setMarking(true); try { await api.checkpoint(id, changes.snapshotId); const latest = await api.changes(id); setChanges(latest.data ?? undefined); } catch (cause) { setError(cause); } finally { setMarking(false); } };
+  // Personalization: fire-and-forget, never surfaced to the user as an
+  // error — a failed "you opened this" write shouldn't interrupt reading it.
+  const recordOpen = (symbol: string) => { void api.recordOpen(symbol).catch(() => {}); };
+  // Snooze needs a real re-fetch (not an optimistic local edit): the card
+  // disappearing from the deck should reflect the server actually having
+  // suppressed it, the same trust boundary markSeen already follows.
+  const snoozeSymbol = async (symbol: string) => { try { await api.snooze(symbol); const latest = await api.changes(id); setChanges(latest.data ?? undefined); } catch (cause) { setError(cause); } };
   // Deep link from a preview chip on /app ("BAJFINANCE -2.52%" → this
   // exact row in this exact list). Plain window.location rather than
   // useSearchParams — this only needs to run once, and useSearchParams
@@ -284,13 +291,13 @@ export default function WatchlistPage() {
                    No major updates since {changes.baseline.takenAt ? new Date(changes.baseline.takenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "your last visit"}. Showing latest movements:
                  </p>
                  {changes.items.length > 0 ? (
-                   <AttentionDeck items={changes.items.slice(0, 3)} sparklines={sparklines} topMover={changes.topMover} onRefresh={markSeen} refreshing={marking} />
+                   <AttentionDeck items={changes.items.slice(0, 3)} sparklines={sparklines} topMover={changes.topMover} onRefresh={markSeen} refreshing={marking} onOpen={recordOpen} onSnooze={snoozeSymbol} />
                  ) : (
                    <p className="text-sm text-[var(--muted)] bg-[var(--surface)] p-6 rounded-2xl border border-[var(--line)]">Your watchlist is completely empty.</p>
                  )}
                </div>
             ) : (
-               <AttentionDeck items={rankedForAttention} sparklines={sparklines} topMover={changes.topMover} onRefresh={markSeen} refreshing={marking} />
+               <AttentionDeck items={rankedForAttention} sparklines={sparklines} topMover={changes.topMover} onRefresh={markSeen} refreshing={marking} onOpen={recordOpen} onSnooze={snoozeSymbol} />
             )}
             {overflow > 0 ? (
               <p className="mt-2 text-xs text-[var(--muted)]">+{overflow} more meaningful, ranked lower — see the full list below.</p>

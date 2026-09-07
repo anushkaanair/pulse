@@ -61,6 +61,25 @@ let checkpointAtMs: number | null = null;
 // is a genuine first visit — no baseline yet — and must mirror the real
 // backend's first-visit digest exactly, not the "3 things" demo copy.
 let firstVisit = false;
+// Personalization (mirrors the real backend's attention_opens/
+// attention_snoozes — see changes/personalization.ts server-side). Applied
+// as a post-process over `items` only, same as the real /changes route:
+// the scripted digest string/topMover stay exactly as written (this is
+// demo copy, not computed from these items), but the ranked deck itself
+// genuinely stops showing a snoozed symbol, since page.tsx derives it by
+// filtering `items` for kind !== "none" — not from the digest text.
+let opens: Record<string, number> = {};
+let snoozedUntil: Record<string, number> = {};
+function applyPersonalizationMock(items: ChangesResponse["items"]): ChangesResponse["items"] {
+  const nowMs = Date.now();
+  return items.map((entry) => {
+    const until = snoozedUntil[entry.symbol];
+    if (until && until > nowMs) {
+      return { ...entry, change: { ...entry.change, kind: "none" as const, attention: 0, snoozedUntil: new Date(until).toISOString() } };
+    }
+    return entry;
+  });
+}
 
 function changesData(): ChangesResponse {
   const current = store[DEMO_ID];
@@ -102,7 +121,7 @@ function changesData(): ChangesResponse {
     attentionBudget: 5,
     topMover: acknowledged ? null : { symbol: "TCS", displaced: "RELIANCE" },
     retractions: [],
-    items: changes,
+    items: applyPersonalizationMock(changes),
   };
 }
 
@@ -204,6 +223,8 @@ export const mock = {
     return etag === "mock-snapshot-1" ? { data: null, etag, notModified: true } : { data: changesData(), etag: "mock-snapshot-1", notModified: false };
   },
   checkpoint: async (_id: string, _snapshotId: string) => { acknowledged = true; firstVisit = false; checkpointAtMs = Date.now(); return { takenAt: new Date(checkpointAtMs).toISOString() }; },
+  recordOpen: async (symbol: string) => { opens[symbol] = (opens[symbol] ?? 0) + 1; },
+  snooze: async (symbol: string, hours: number) => { const until = Date.now() + hours * 3_600_000; snoozedUntil[symbol] = until; return { snoozedUntil: new Date(until).toISOString() }; },
   // The real backend always has a NIFTY row (the market-index proxy every
   // symbol's beta is measured against); no single list's items reliably
   // includes it, so it's synthesized here rather than left to render as a

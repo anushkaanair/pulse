@@ -5,6 +5,7 @@ import { z } from "zod";
 import { config } from "../config.js";
 import { buildDigest, computeChanges, DEFAULT_MULTIPLIER, type Change, type EngineItem, type EngineResult, type SnapshotPayload } from "../changes/engine.js";
 import { loadStats } from "../changes/stats.js";
+import { applyPersonalization, type AttentionMemory } from "../changes/personalization.js";
 import { decideSignificance, type SignificanceRow } from "../changes/significance.js";
 import { AppError } from "../middleware/errorHandler.js";
 import { feedStatus } from "./health.js";
@@ -104,13 +105,22 @@ export function changesRouter(pool: Pool, ingestor: Ingestor) {
         baseline ? new Date(baseline.taken_at) : null,
       );
 
-      // Watchlist-relative ranking, not just magnitude: `results` is already
-      // sorted by the engine's own attention score, so results[0] (if it's
-      // actually meaningful) IS the current #1 mover. Compared against who
-      // held that spot as of the last checkpoint, this is "you have a new
-      // top mover" rather than just "here's a z-score" — a different and
-      // more useful claim about attention, not magnitude.
-      const currentTop = results[0] && results[0].change.kind !== "none" ? results[0].symbol : null;
+      // Personalization (see changes/personalization.ts): applied AFTER the
+      // significance clock on purpose — that clock decides whether the
+      // underlying market data crossed a threshold, which is global and
+      // must never be influenced by one user's snooze/open history. What
+      // gets adjusted here is purely this user's view of the (already
+      // globally-decided) results: a snooze suppresses, an open-history
+      // boosts, and the ranking is redone on top of that.
+      const personalized = applyPersonalization(results, await loadAttentionMemory(pool, req.userId, symbols, now), now);
+
+      // Watchlist-relative ranking, not just magnitude: `personalized` is
+      // already re-ranked, so its first entry (if actually meaningful) IS
+      // the current #1 mover. Compared against who held that spot as of
+      // the last checkpoint, this is "you have a new top mover" rather
+      // than just "here's a z-score" — a different and more useful claim
+      // about attention, not magnitude.
+      const currentTop = personalized[0] && personalized[0].change.kind !== "none" ? personalized[0].symbol : null;
       const topMover =
         currentTop && currentTop !== baseline?.top_symbol
           ? { symbol: currentTop, displaced: baseline?.top_symbol ?? null }
@@ -148,10 +158,10 @@ export function changesRouter(pool: Pool, ingestor: Ingestor) {
       const etag = etagFor(snapshotId);
 
       const summary = {
-        meaningful: results.filter((x) => x.change.kind === "move" || x.change.kind === "event").length,
-        total: results.length,
+        meaningful: personalized.filter((x) => x.change.kind === "move" || x.change.kind === "event").length,
+        total: personalized.length,
         stale: [...quoteBySymbol.values()].filter((q) => q.stale).length,
-        newSinceLast: results.filter((x) => x.change.kind === "new").length,
+        newSinceLast: personalized.filter((x) => x.change.kind === "new").length,
       };
 
       res.setHeader("ETag", etag);
@@ -160,7 +170,7 @@ export function changesRouter(pool: Pool, ingestor: Ingestor) {
         baseline: { takenAt: baseline ? new Date(baseline.taken_at).toISOString() : null, kind: baselineKind, awaySeconds: elapsedMs === null ? null : Math.round(elapsedMs / 1000) },
         asOf: asOfMax?.toISOString() ?? null,
         feed: (({ status, lagSeconds }) => ({ status, lagSeconds }))(feedStatus(ingestor.provider.lastTickAt(), now)),
-        digest: buildDigest(results, baselineKind, elapsedMs),
+        digest: buildDigest(personalized, baselineKind, elapsedMs),
         summary,
         // A product decision, not a UI afterthought: how many ranked cards
         // deserve first-glance attention before the rest belong in the full
@@ -171,7 +181,7 @@ export function changesRouter(pool: Pool, ingestor: Ingestor) {
         // A retraction is a first-class, visible item — never a silent
         // delete of something already shown. See changes/significance.ts.
         retractions,
-        items: results.slice(0, limit).map((x) => {
+        items: personalized.slice(0, limit).map((x) => {
           const quote = quoteBySymbol.get(x.symbol) ?? null;
           return { symbol: x.symbol, name: x.name, quote, stale: quote ? quote.stale : true, change: withQuietNote(x.change, quietForMs.get(x.symbol)) };
         }),
@@ -355,4 +365,36 @@ function humanizeDuration(ms: number): string {
   if (hours >= 1) return `${hours} hour${hours === 1 ? "" : "s"}`;
   const minutes = Math.max(1, Math.floor(ms / 60_000));
   return `${minutes} min${minutes === 1 ? "" : "s"}`;
+}
+
+// Two small, targeted queries rather than one join: snoozes are usually
+// empty (most users have snoozed nothing) and opens is a GROUP BY — forcing
+// them into one query would mean carrying every open row's actual date
+// through a join for symbols that never even appear in attention_snoozes.
+// Both are per-request-symbol-list, not full-table, so this stays cheap
+// regardless of how large attention_opens grows over time (see
+// ingestor.ts's prune job for how that's bounded).
+async function loadAttentionMemory(
+  pool: Pool, userId: string, symbols: string[], now: Date,
+): Promise<Map<string, AttentionMemory>> {
+  const memory = new Map<string, AttentionMemory>();
+  if (symbols.length === 0) return memory;
+
+  const [snoozes, opens] = await Promise.all([
+    pool.query<{ symbol: string; snoozed_until: Date }>(
+      "SELECT symbol, snoozed_until FROM attention_snoozes WHERE user_id = $1 AND symbol = ANY($2) AND snoozed_until > $3",
+      [userId, symbols, now],
+    ),
+    pool.query<{ symbol: string; c: number }>(
+      `SELECT symbol, count(*)::int c FROM attention_opens
+        WHERE user_id = $1 AND symbol = ANY($2) AND opened_at > $3
+        GROUP BY symbol`,
+      [userId, symbols, new Date(now.getTime() - 30 * 86_400_000)],
+    ),
+  ]);
+
+  const get = (symbol: string): AttentionMemory => memory.get(symbol) ?? { snoozedUntil: null, opensLast30d: 0 };
+  for (const row of snoozes.rows) memory.set(row.symbol, { ...get(row.symbol), snoozedUntil: row.snoozed_until });
+  for (const row of opens.rows) memory.set(row.symbol, { ...get(row.symbol), opensLast30d: row.c });
+  return memory;
 }

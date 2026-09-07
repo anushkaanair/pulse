@@ -52,13 +52,22 @@ function layoutFor(containerWidth: number) {
 // meaningful changed" is a real empty state elsewhere on the page, not
 // something this deck should paper over with ordinary movement.
 export function AttentionDeck({
-  items, sparklines, topMover, onRefresh, refreshing,
+  items, sparklines, topMover, onRefresh, refreshing, onOpen, onSnooze,
 }: {
   items: ChangeItem[];
   sparklines: Record<string, SparklinePoint[] | undefined>;
   topMover: { symbol: string; displaced: string | null } | null;
   onRefresh?: () => void;
   refreshing?: boolean;
+  // Personalization (see backend changes/personalization.ts): fired when a
+  // card is actually opened for its reasoning — not on every render, and
+  // not on arrow/wheel browsing between cards, which is closer to skimming
+  // than genuine engagement. Fire-and-forget from the caller's side.
+  onOpen?: (symbol: string) => void;
+  // Mutes a symbol from the ranked deck for 24h — the caller re-fetches
+  // changes after this resolves, so the card disappearing is a real
+  // server-confirmed state, not an optimistic guess.
+  onSnooze?: (symbol: string) => void;
 }) {
   const stage = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
@@ -231,8 +240,20 @@ export function AttentionDeck({
               aria-current={isFront}
               aria-expanded={isFront ? expanded : undefined}
               aria-label={isFront ? `${item.symbol}: ${item.change.why}. Open details` : `Bring ${item.symbol} to the front`}
-              onClick={() => (isFront ? setExpanded((o) => !o) : (setActive(index), setExpanded(true)))}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); isFront ? setExpanded((o) => !o) : setActive(index); } }}
+              onClick={() => {
+                if (isFront) {
+                  setExpanded((o) => { const next = !o; if (next) onOpen?.(item.symbol); return next; });
+                } else {
+                  setActive(index); setExpanded(true); onOpen?.(item.symbol);
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  if (isFront) setExpanded((o) => { const next = !o; if (next) onOpen?.(item.symbol); return next; });
+                  else setActive(index);
+                }
+              }}
               className="absolute left-0 top-0 block cursor-pointer rounded-2xl p-px text-left"
               style={{
                 width: dims.cardW, marginLeft: -dims.cardW / 2, marginTop: dims.cardTop,
@@ -325,6 +346,16 @@ export function AttentionDeck({
                   </div>
 
                   {isFront ? <ExpandedDetail item={item} points={sparklines[item.symbol]} /> : null}
+                  {isFront && onSnooze ? (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onSnooze(item.symbol); }}
+                      title="Stop showing this card in the deck for 24 hours"
+                      className="mt-3 w-full rounded-lg border border-[var(--line-2)] py-1.5 text-[11px] font-medium text-[var(--muted)] transition-colors hover:border-[var(--line)] hover:text-[var(--ink)]"
+                    >
+                      Snooze for 24h
+                    </button>
+                  ) : null}
                 </div>
                 )}
               </div>

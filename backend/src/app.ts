@@ -7,6 +7,7 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import { rateLimit } from "./middleware/rateLimit.js";
 import { requireUserId } from "./middleware/userId.js";
 import type { Ingestor } from "./market/ingestor.js";
+import { attentionRouter } from "./routes/attention.js";
 import { changesRouter } from "./routes/changes.js";
 import { checkpointRouter } from "./routes/checkpoint.js";
 import { healthRouter } from "./routes/health.js";
@@ -67,6 +68,7 @@ export function createApp(pool: Pool, ingestor: Ingestor) {
   app.use(simRouter(ingestor.provider));
   app.use("/api", requireUserId);
   app.use(symbolsRouter(pool));
+  app.use(attentionRouter(pool));
   app.use(quotesRouter(pool));
   app.use(watchlistsRouter(pool));
   app.use(changesRouter(pool, ingestor));
