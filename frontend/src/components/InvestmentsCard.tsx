@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api, type ChangeItem, type Quote } from "@/lib/api";
 
@@ -13,7 +14,7 @@ import { api, type ChangeItem, type Quote } from "@/lib/api";
 // commitment as the rest of the app, just applied to a demo holdings view.
 const PER_SYMBOL = 1000;
 
-export function InvestmentsCard({ items }: { items: ChangeItem[] }) {
+export function InvestmentsCard({ items, id }: { items: ChangeItem[]; id: string }) {
   const [nifty, setNifty] = useState<Quote | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -52,8 +53,13 @@ export function InvestmentsCard({ items }: { items: ChangeItem[] }) {
     // so this can never read as a real holdings widget at a glance — the
     // exact ambiguity that gets flagged in a real fintech compliance
     // review. Distinct border style, not just color, so it still reads
-    // right for colorblind users.
-    <div className="rounded-2xl border border-dashed border-[var(--amber)]/40 p-5" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
+    // right for colorblind users. The whole card is a link through to the
+    // per-symbol paper-trading breakdown at /w/[id]/paper.
+    <Link
+      href={`/w/${id}/paper`}
+      className="group block rounded-2xl border border-dashed border-[var(--amber)]/40 p-5 transition-colors hover:border-[var(--amber)]/70"
+      style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}
+    >
       <div className="mb-4 flex items-center justify-between">
         <h3 className="m-0 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Your investments</h3>
         <span
@@ -92,6 +98,9 @@ export function InvestmentsCard({ items }: { items: ChangeItem[] }) {
         <span className="numbers font-medium">{fmt(invested)}</span>
       </div>
       <p className="mt-3 mb-0 text-[10px] leading-relaxed text-[var(--muted)]">₹{PER_SYMBOL.toLocaleString("en-IN")} notional per tracked stock, priced live.</p>
-    </div>
+      <p className="mt-2 mb-0 text-[11px] font-medium text-[var(--muted)] opacity-0 group-hover:opacity-100 transition-opacity">
+        View per-stock breakdown →
+      </p>
+    </Link>
   );
 }

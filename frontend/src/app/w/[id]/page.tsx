@@ -306,7 +306,7 @@ export default function WatchlistPage() {
 
           {/* Mobile Investments Card (shown only on mobile below attention deck) */}
           <div className="block lg:hidden mb-6">
-            <InvestmentsCard items={changes.items} />
+            <InvestmentsCard items={changes.items} id={id} />
           </div>
 
           {/* Full List */}
@@ -441,7 +441,7 @@ export default function WatchlistPage() {
           </button>
         </div>
 
-        {!isMobile && <InvestmentsCard items={changes!.items} />}
+        {!isMobile && <InvestmentsCard items={changes!.items} id={id} />}
         <MarketTrends items={changes!.items} />
 
         <Link href={`/w/${id}/history`} className="rounded-2xl border border-[var(--line)] p-5 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] transition-colors flex items-center justify-between" style={{ background: "linear-gradient(180deg, var(--surface-2), var(--surface))" }}>
